@@ -26,21 +26,21 @@ function App() {
       setError('Please enter a repository URL');
       return;
     }
-    
+
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3002/api/analyze', {
+      const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoUrl, timeRange })
       });
-      
+
       if (!response.ok) throw new Error('Failed to analyze');
-      
+
       const result = await response.json();
-      
+
       // Extract owner/repo from URL
       const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/\.]+)/);
       if (match) {
@@ -48,7 +48,7 @@ function App() {
         setRepoInfo(info);
         window.repoInfo = info;
       }
-      
+
       setData(result.data);
     } catch (err) {
       setError(err.message);
@@ -100,10 +100,10 @@ function App() {
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         {/* Header */}
         <div style={{ marginBottom: '40px', borderBottom: '3px solid #1A1A1A', paddingBottom: '24px' }}>
-          <h1 style={{ 
-            margin: '0 0 12px', 
-            fontSize: '48px', 
-            fontWeight: '600', 
+          <h1 style={{
+            margin: '0 0 12px',
+            fontSize: '48px',
+            fontWeight: '600',
             fontFamily: 'Literata, serif',
             letterSpacing: '-1px'
           }}>
@@ -115,19 +115,19 @@ function App() {
         </div>
 
         {/* Input Section */}
-        <div style={{ 
-          background: '#FFFFFF', 
-          border: '2px solid #E8E8E8', 
-          padding: '32px', 
+        <div style={{
+          background: '#FFFFFF',
+          border: '2px solid #E8E8E8',
+          padding: '32px',
           marginBottom: '40px',
           borderRadius: '8px'
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', marginBottom: '24px' }}>
             <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '13px', 
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontSize: '13px',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '1px'
@@ -139,10 +139,10 @@ function App() {
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
                 placeholder="https://github.com/username/repository"
-                style={{ 
-                  width: '100%', 
-                  padding: '14px', 
-                  fontSize: '15px', 
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  fontSize: '15px',
                   border: '2px solid #E8E8E8',
                   background: '#FAFAFA',
                   fontFamily: 'inherit',
@@ -152,12 +152,12 @@ function App() {
                 onBlur={(e) => e.target.style.borderColor = '#E8E8E8'}
               />
             </div>
-            
+
             <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '13px', 
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontSize: '13px',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '1px'
@@ -167,9 +167,9 @@ function App() {
               <select
                 value={timeRange}
                 onChange={(e) => setTimeRange(e.target.value)}
-                style={{ 
-                  padding: '14px 40px 14px 14px', 
-                  fontSize: '15px', 
+                style={{
+                  padding: '14px 40px 14px 14px',
+                  fontSize: '15px',
                   border: '2px solid #E8E8E8',
                   background: '#FAFAFA',
                   fontFamily: 'inherit',
@@ -190,12 +190,12 @@ function App() {
           <button
             onClick={analyzeRepository}
             disabled={loading}
-            style={{ 
-              background: '#1A1A1A', 
-              color: '#FAF9F6', 
+            style={{
+              background: '#1A1A1A',
+              color: '#FAF9F6',
               border: 'none',
-              padding: '14px 32px', 
-              fontSize: '15px', 
+              padding: '14px 32px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: loading ? 'not-allowed' : 'pointer',
               fontFamily: 'inherit',
@@ -209,11 +209,11 @@ function App() {
           </button>
 
           {error && (
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px', 
+            <div style={{
+              marginTop: '16px',
+              padding: '16px',
               background: '#FFE5E5',
-              border: '2px solid #C9184A', 
+              border: '2px solid #C9184A',
               color: '#8B0000',
               fontSize: '14px',
               borderRadius: '6px'
@@ -227,9 +227,9 @@ function App() {
         {data && (
           <>
             {/* Primary Branch Info */}
-            <div style={{ 
-              background: '#1A1A1A', 
-              color: '#FAF9F6', 
+            <div style={{
+              background: '#1A1A1A',
+              color: '#FAF9F6',
               padding: '28px 32px',
               marginBottom: '40px',
               borderRadius: '8px',
@@ -258,16 +258,16 @@ function App() {
 
             {/* Branching Strategy Analysis */}
             {data.branchingAnalysis && (
-              <div style={{ 
-                background: '#FFFFFF', 
-                border: '2px solid #E8E8E8', 
+              <div style={{
+                background: '#FFFFFF',
+                border: '2px solid #E8E8E8',
                 padding: '32px',
                 marginBottom: '40px',
                 borderRadius: '8px'
               }}>
-                <h3 style={{ 
-                  margin: '0 0 24px', 
-                  fontSize: '20px', 
+                <h3 style={{
+                  margin: '0 0 24px',
+                  fontSize: '20px',
                   fontWeight: '600',
                   fontFamily: 'Literata, serif',
                   display: 'flex',
@@ -313,15 +313,15 @@ function App() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                  <div 
-                    onClick={() => setShowModal({ 
+                  <div
+                    onClick={() => setShowModal({
                       type: 'info',
                       title: data.branchingAnalysis.strategy,
                       explanation: data.branchingAnalysis.strategyExplanation
                     })}
-                    style={{ 
-                      background: '#F5F5F5', 
-                      padding: '20px', 
+                    style={{
+                      background: '#F5F5F5',
+                      padding: '20px',
                       borderRadius: '8px',
                       borderLeft: '4px solid #1A1A1A',
                       cursor: 'pointer',
@@ -347,16 +347,16 @@ function App() {
                     </div>
                   </div>
 
-                  <div 
-                    onClick={() => setShowModal({ 
+                  <div
+                    onClick={() => setShowModal({
                       type: 'info',
                       title: data.branchingAnalysis.workflow,
                       explanation: data.branchingAnalysis.workflowExplanation,
                       criteria: data.branchingAnalysis.detectionCriteria
                     })}
-                    style={{ 
-                      background: '#F5F5F5', 
-                      padding: '20px', 
+                    style={{
+                      background: '#F5F5F5',
+                      padding: '20px',
                       borderRadius: '8px',
                       borderLeft: '4px solid #7209B7',
                       cursor: 'pointer',
@@ -392,7 +392,7 @@ function App() {
                           // Filter branches by type
                           const patternType = p.type.toLowerCase();
                           let filteredBranches = [];
-                          
+
                           if (patternType.includes('feature')) {
                             filteredBranches = data.branches.filter(b => b.name.includes('feature'));
                           } else if (patternType.includes('bugfix')) {
@@ -404,7 +404,7 @@ function App() {
                           } else if (patternType.includes('release')) {
                             filteredBranches = data.branches.filter(b => b.name.includes('release'));
                           }
-                          
+
                           if (filteredBranches.length > 0) {
                             setShowModal({
                               type: 'branches',
@@ -413,8 +413,8 @@ function App() {
                             });
                           }
                         }}
-                        style={{ 
-                          background: '#FAFAFA', 
+                        style={{
+                          background: '#FAFAFA',
                           border: '1px solid #E8E8E8',
                           padding: '16px',
                           borderRadius: '6px',
@@ -434,8 +434,8 @@ function App() {
                         }}
                       >
                         <span style={{ fontSize: '14px', color: '#333' }}>{p.type}</span>
-                        <span style={{ 
-                          background: '#1A1A1A', 
+                        <span style={{
+                          background: '#1A1A1A',
                           color: '#fff',
                           padding: '4px 12px',
                           borderRadius: '12px',
@@ -453,25 +453,25 @@ function App() {
 
             {/* Branch Diagram */}
             {data.graph && data.graph.length > 0 && (
-              <div style={{ 
-                background: '#fff', 
-                border: '2px solid #E8E8E8', 
+              <div style={{
+                background: '#fff',
+                border: '2px solid #E8E8E8',
                 padding: '32px',
                 marginBottom: '40px',
                 borderRadius: '8px'
               }}>
                 <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ 
-                    margin: 0, 
-                    fontSize: '20px', 
+                  <h3 style={{
+                    margin: 0,
+                    fontSize: '20px',
                     fontWeight: '600',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px'
                   }}>
                     🌳 Branch Diagram
-                    <span style={{ 
-                      fontSize: '13px', 
+                    <span style={{
+                      fontSize: '13px',
                       background: '#F5F5F5',
                       color: '#666',
                       padding: '4px 12px',
@@ -482,16 +482,16 @@ function App() {
                     </span>
                   </h3>
                 </div>
-                
-                <div 
+
+                <div
                   onClick={() => setShowModal({
                     type: 'diagram',
                     title: 'Branch Diagram - Full View',
                     data: data.graph,
                     primaryBranch: data.primaryBranch
                   })}
-                  style={{ 
-                    background: '#FAFAFA', 
+                  style={{
+                    background: '#FAFAFA',
                     border: '1px solid #E8E8E8',
                     borderRadius: '8px',
                     overflow: 'hidden',
@@ -509,8 +509,8 @@ function App() {
                     e.currentTarget.style.boxShadow = 'none';
                   }}
                 >
-                  <BranchDiagram 
-                    commits={data.graph.slice(0, 50)} 
+                  <BranchDiagram
+                    commits={data.graph.slice(0, 50)}
                     primaryBranch={data.primaryBranch}
                     compact={true}
                   />
@@ -529,9 +529,9 @@ function App() {
                     Click to expand and see all commits
                   </div>
                 </div>
-                
-                <div style={{ 
-                  marginTop: '16px', 
+
+                <div style={{
+                  marginTop: '16px',
                   padding: '12px',
                   background: '#F5F5F5',
                   fontSize: '12px',
@@ -545,18 +545,18 @@ function App() {
             )}
 
             {/* Summary Stats */}
-            <div style={{ 
-              display: 'grid', 
+            <div style={{
+              display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
               gap: '16px'
             }}>
-              <div 
-                onClick={() => setShowModal({ 
+              <div
+                onClick={() => setShowModal({
                   type: 'contributors',
                   data: data.contributors,
                   title: `${data.contributors.length} Contributors`
                 })}
-                style={{ 
+                style={{
                   background: '#FFFFFF',
                   border: '2px solid #E8E8E8',
                   padding: '24px',
@@ -586,13 +586,13 @@ function App() {
                 </div>
               </div>
 
-              <div 
-                onClick={() => setShowModal({ 
+              <div
+                onClick={() => setShowModal({
                   type: 'branches',
                   data: data.branches,
                   title: `${data.totalBranches} Branches`
                 })}
-                style={{ 
+                style={{
                   background: '#FFFFFF',
                   border: '2px solid #E8E8E8',
                   padding: '24px',
@@ -622,13 +622,13 @@ function App() {
                 </div>
               </div>
 
-              <div 
-                onClick={() => setShowModal({ 
+              <div
+                onClick={() => setShowModal({
                   type: 'commits',
                   data: data.graph,
                   title: `${data.totalCommits.toLocaleString()} Commits`
                 })}
-                style={{ 
+                style={{
                   background: '#FFFFFF',
                   border: '2px solid #E8E8E8',
                   padding: '24px',
@@ -658,7 +658,7 @@ function App() {
                 </div>
               </div>
 
-              <div style={{ 
+              <div style={{
                 background: '#FFFFFF',
                 border: '2px solid #E8E8E8',
                 padding: '24px',
