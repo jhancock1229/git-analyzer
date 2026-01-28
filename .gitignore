@@ -1,0 +1,45 @@
+repos/*
+# dependencies
+node_modules/
+
+# production build
+build/
+dist/
+
+# local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# cache
+.cache/
+.parcel-cache/
+
+# coverage
+coverage/
+
+# misc
+*.log
+
+# optional: lockfiles (keep ONE, not all)
+# yarn.lock
+# package-lock.json
+# pnpm-lock.yaml
+
