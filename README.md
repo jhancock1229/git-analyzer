@@ -1,230 +1,164 @@
-# Git Repository Analyzer
+# Git Repository Analyzer - React App
 
-A simple tool to analyze git repositories and visualize who has been working on what over different time periods.
+A modern React application for analyzing Git repositories using the GitHub API.
 
-## Features
+## 🚀 Quick Start
 
-- Analyze any git repository (public or local)
-- View contributor activity across different time ranges:
-  - Last 24 Hours
-  - Last Week
-  - Last Month
-  - Last Quarter (90 days)
-  - Last 6 Months
-  - Last Year
-  - All Time
-- See detailed contributor statistics:
-  - Number of commits
-  - Lines added/deleted
-  - Branches created
-  - Last activity time
-- Color-coded branch types (feature, bugfix, refactor, etc.)
-- Clean, editorial design that's easy for non-technical managers to understand
-
-## Prerequisites
-
-- Node.js (v14 or higher)
-- Git installed on your system
-- npm or yarn
-
-## Installation
-
-1. Install backend dependencies:
+### 1. Install Dependencies
 
 ```bash
+cd react-app
 npm install
 ```
 
-2. For the React frontend, you'll need to set up a React project. You can use Create React App or Vite:
+This installs both frontend (React, Vite) and backend (Express, CORS) dependencies.
+
+### 2. Start the Backend API Server
+
+In one terminal:
 
 ```bash
-# Using Create React App
-npx create-react-app git-analyzer-frontend
-cd git-analyzer-frontend
-
-# Install recharts for visualizations (if you want to add charts later)
-npm install recharts
-
-# Copy the GitContributorAnalyzer.jsx into src/
-# Then import and use it in App.js
+npm run server
 ```
 
-## Running the Application
-
-### 1. Start the Backend Server
+Or:
 
 ```bash
-node server.js
+node server-api.js
 ```
 
-The backend will start on `http://localhost:3001`
+The API will run on `http://localhost:3002`
 
-### 2. Start the Frontend
+### 3. Start the React Dev Server
 
-In a separate terminal:
+In another terminal:
 
 ```bash
-cd git-analyzer-frontend
-npm start
+npm run dev
 ```
 
-The frontend will start on `http://localhost:3000`
+The app will run on `http://localhost:3000`
 
-## Usage
+### 4. Open in Browser
 
-1. Open your browser to `http://localhost:3000`
-2. Enter a git repository URL (e.g., `https://github.com/facebook/react.git`)
-3. Select a time range from the dropdown
-4. Click "ANALYZE REPOSITORY"
-5. View the results showing contributors and their branches
+Navigate to `http://localhost:3000`
 
-## API Endpoints
-
-### POST /api/analyze
-
-Analyze a git repository for a specific time range.
-
-**Request Body:**
-```json
-{
-  "repoUrl": "https://github.com/username/repo.git",
-  "timeRange": "week"
-}
-```
-
-**Time Range Options:**
-- `day` - Last 24 hours
-- `week` - Last 7 days
-- `month` - Last 30 days
-- `quarter` - Last 90 days
-- `6months` - Last 180 days
-- `year` - Last 365 days
-- `all` - All time
-
-**Response:**
-```json
-{
-  "success": true,
-  "repoUrl": "https://github.com/username/repo.git",
-  "timeRange": "week",
-  "data": {
-    "contributors": [
-      {
-        "name": "John Doe",
-        "email": "john@example.com",
-        "commits": 45,
-        "additions": 2340,
-        "deletions": 890,
-        "branches": [
-          {
-            "name": "feature/new-feature",
-            "lastUpdate": "2 hours ago"
-          }
-        ]
-      }
-    ],
-    "totalCommits": 234,
-    "timeRange": "Last Week"
-  }
-}
-```
-
-### GET /api/health
-
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok"
-}
-```
-
-## How It Works
-
-1. **Repository Cloning**: The backend clones the repository (or updates it if already cloned) to a local `repos/` directory
-2. **Git Analysis**: Uses native git commands to extract:
-   - Branch information (`git for-each-ref`)
-   - Commit history (`git log`)
-   - File changes (additions/deletions)
-3. **Data Processing**: Parses git output and aggregates data by contributor
-4. **Visualization**: Frontend displays the data in an easy-to-read format
-
-## Project Structure
+## 📁 Project Structure
 
 ```
-.
-├── server.js                      # Express backend server
-├── package.json                   # Backend dependencies
-├── GitContributorAnalyzer.jsx     # React frontend component
-├── repos/                         # Git repositories (created automatically)
-└── README.md                      # This file
+react-app/
+├── src/
+│   ├── components/
+│   │   ├── BranchDiagram.jsx    # SVG branch visualization
+│   │   └── Modal.jsx             # Modal components (Info, Diagram, List)
+│   ├── App.jsx                   # Main application component
+│   ├── main.jsx                  # React entry point
+│   └── index.css                 # Global styles
+├── server-api.js                 # Backend API (GitHub API client)
+├── index.html                    # HTML entry point
+├── vite.config.js               # Vite configuration
+└── package.json                  # Dependencies (includes Express)
 ```
 
-## Analyzing Private Repositories
+**Everything in one directory!** No need to go up a level.
 
-To analyze private repositories, you have a few options:
+## 🎯 Features
 
-1. **Local Repositories**: Instead of a URL, you can modify the code to accept a local path
-2. **SSH Keys**: Ensure your SSH keys are set up and use SSH URLs (git@github.com:user/repo.git)
-3. **Access Tokens**: For HTTPS URLs, you can include authentication in the URL (not recommended for production)
+### Analysis
+- ✅ Branching strategy detection (Git Flow, GitHub Flow, Trunk-Based)
+- ✅ Workflow detection (Fork + PR, Direct Commit, Branch-based)
+- ✅ Contributor statistics
+- ✅ Branch visualization with divergence
+- ✅ Commit timeline
 
-## Customization
+### Interactive UI
+- ✅ Clickable branch diagram (expands to full view)
+- ✅ Sortable contributor/branch/commit lists
+- ✅ Clickable commits → open on GitHub
+- ✅ Clickable branches → open on GitHub
+- ✅ Info modals with detection criteria
+- ✅ Responsive design
 
-### Adding More Time Ranges
+## 🔧 Technology Stack
 
-Edit the `TIME_RANGES` object in `server.js`:
+- **Frontend**: React 18 + Vite
+- **Backend**: Node.js + Express
+- **API**: GitHub REST API v3
+- **Styling**: Inline styles (no dependencies)
+- **Fonts**: IBM Plex Mono + Literata
 
-```javascript
-const TIME_RANGES = {
-  'custom': { days: 14, label: 'Last 2 Weeks' },
-  // ... add more ranges
-};
+## 📊 How It Works
+
+1. **User enters GitHub repo URL**
+2. **Backend fetches data** via GitHub API (no cloning!)
+3. **Analyzes** branching patterns, workflows, contributors
+4. **Visualizes** branch history as interactive SVG diagram
+5. **Click to explore** - commits, branches, strategies
+
+## 🌟 Key Components
+
+### BranchDiagram
+- SVG-based git graph visualization
+- Shows branch divergence and merges
+- Clickable commits that link to GitHub
+- Scales to show full history
+
+### Modal System
+- **InfoModal**: Shows strategy/workflow explanations
+- **DiagramModal**: Full-screen scrollable branch diagram
+- **SortableListModal**: Sortable lists of contributors/branches/commits
+
+### App
+- Main container component
+- Manages state and API calls
+- Coordinates modal system
+
+## 🔑 GitHub Token (Optional)
+
+Set a GitHub token to increase rate limits from 60 to 5,000 requests/hour:
+
+```bash
+export GITHUB_TOKEN=your_token_here
+node server-api.js
 ```
 
-### Changing Branch Color Coding
+Get a token at: https://github.com/settings/tokens
 
-Edit the `getBranchColor` function in `GitContributorAnalyzer.jsx`:
+## 🚢 Building for Production
 
-```javascript
-const getBranchColor = (branchName) => {
-  if (branchName.includes('epic')) return '#FFD700';
-  // ... add more patterns
-};
+```bash
+npm run build
 ```
 
-## Troubleshooting
+This creates a `dist/` folder with optimized static files ready for deployment.
 
-**Error: Failed to clone repository**
-- Check that the repository URL is correct
-- Ensure you have network access
-- For private repos, verify your authentication
+## 📝 Notes
 
-**Error: git command not found**
-- Make sure git is installed: `git --version`
-- On Windows, ensure git is in your PATH
+- No git cloning required - uses GitHub API
+- No storage costs - all data fetched on demand
+- Fast analysis - results in seconds
+- Only works with GitHub repositories
+- Rate limited without token (60 req/hour)
 
-**Backend won't start**
-- Check if port 3001 is already in use
-- Try changing the PORT in server.js
+## 🎨 Customization
 
-## Performance Notes
+All styling is inline in components - easy to customize!
+Edit colors, fonts, spacing directly in component files.
 
-- First analysis of a large repository may take time (cloning)
-- Subsequent analyses are faster (uses git pull)
-- Very large repositories may need increased buffer sizes
-- The `repos/` directory will grow over time - clean it periodically
+## 🐛 Troubleshooting
 
-## Future Enhancements
+**"Failed to analyze" error:**
+- Make sure `server-api.js` is running on port 3002
+- Check that the GitHub URL is valid and public
 
-- [ ] Commit frequency charts
-- [ ] Code ownership heatmaps
-- [ ] Branch merge status
-- [ ] Pull request integration
-- [ ] Export to PDF/CSV
-- [ ] Real-time updates
-- [ ] Multi-repository comparison
+**Empty diagram:**
+- Repository might not have enough commits
+- Check browser console for errors
 
-## License
+**Rate limit errors:**
+- Set a GitHub token (see above)
+- Wait an hour for rate limit to reset
+
+## 📄 License
 
 MIT
