@@ -476,27 +476,62 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Analyze PR activity for recent work context
   const prInsights = analyzePRActivity(mergedPRsInRange);
   
-  // Build summary with PR context
-  let summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing.`;
+  // Build conversational executive summary
+  let summary = '';
   
-  // Add PR-based work summary
-  if (mergedPRsInRange.length > 0) {
-    const prSummary = [];
-    
-    if (prInsights.prTypes.features > 0) prSummary.push(`${prInsights.prTypes.features} new features`);
-    if (prInsights.prTypes.bugfixes > 0) prSummary.push(`${prInsights.prTypes.bugfixes} bug fixes`);
-    if (prInsights.prTypes.dependencies > 0) prSummary.push(`${prInsights.prTypes.dependencies} dependency updates`);
-    
-    if (prSummary.length > 0) {
-      summary += ` ${mergedPRsInRange.length} pull requests merged: ${prSummary.join(', ')}.`;
+  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '').replace('all time', 'historically');
+  const commitCount = allCommits.length;
+  const devCount = contributors.size;
+  
+  // Start with activity level in plain English
+  if (commitCount === 0) {
+    summary = `Things have been quiet ${timeLabel === 'historically' ? 'lately' : `this ${timeLabel}`}—no new activity to report.`;
+  } else {
+    // Describe what's happening
+    if (commitCount > 100 && devCount > 15) {
+      summary = `This has been a busy ${timeLabel} with ${devCount} developers pushing ${commitCount} commits.`;
+    } else if (commitCount > 50) {
+      summary = `Solid development activity this ${timeLabel}—${devCount} ${devCount === 1 ? 'developer' : 'developers'} committed ${commitCount} changes.`;
+    } else if (commitCount > 20) {
+      summary = `Steady progress this ${timeLabel} with ${commitCount} commits from ${devCount} ${devCount === 1 ? 'contributor' : 'contributors'}.`;
+    } else {
+      summary = `Light activity this ${timeLabel}—${commitCount} commits from ${devCount} ${devCount === 1 ? 'developer' : 'developers'}.`;
     }
     
-    if (prInsights.recentWork.length > 0) {
-      summary += ` Recent work includes: ${prInsights.recentWork.join(', ')}.`;
+    // What actually got done
+    if (mergedPRsInRange.length > 0) {
+      const { features, bugfixes, dependencies } = prInsights.prTypes;
+      
+      if (features > 5 && bugfixes > 5) {
+        summary += ` The team's been balancing new feature work (${features} shipped) with keeping things stable (${bugfixes} bugs squashed).`;
+      } else if (features > 0 && bugfixes > 0) {
+        summary += ` ${features} new ${features === 1 ? 'feature' : 'features'} shipped and ${bugfixes} ${bugfixes === 1 ? 'bug' : 'bugs'} fixed.`;
+      } else if (features > 3) {
+        summary += ` Feature development is the focus right now—${features} new capabilities added.`;
+      } else if (features > 0) {
+        summary += ` Added ${features} new ${features === 1 ? 'feature' : 'features'}.`;
+      } else if (bugfixes > 5) {
+        summary += ` Major focus on stability and quality—${bugfixes} issues resolved.`;
+      } else if (bugfixes > 0) {
+        summary += ` Fixed ${bugfixes} ${bugfixes === 1 ? 'bug' : 'bugs'}.`;
+      }
+      
+      // What areas they're working in
+      if (prInsights.recentWork.length > 0) {
+        const top3 = prInsights.recentWork.slice(0, 3);
+        if (top3.length === 1) {
+          summary += ` Most work is going into ${top3[0]}.`;
+        } else if (top3.length === 2) {
+          summary += ` Key focus areas: ${top3[0]} and ${top3[1]}.`;
+        } else {
+          summary += ` Main areas of work: ${top3[0]}, ${top3[1]}, and ${top3[2]}.`;
+        }
+      }
     }
   }
   
-  summary += ` The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
+  const fullSummary = summary;
+  
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
@@ -513,7 +548,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     timeline: [],
     graph: graphNodes,
     branchingAnalysis,
-    activitySummary: summary,
+    activitySummary: fullSummary,
     cicdTools
   };
 }
