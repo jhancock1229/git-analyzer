@@ -276,11 +276,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   let allCommits = [];
   const commitMap = new Map();
   
-  // Limit to 10 branches to avoid timeout
-  for (const branch of branches.slice(0, 10)) {
+  // Increase to 20 branches and 3 pages per branch for more complete data
+  for (const branch of branches.slice(0, 20)) {
     let branchPage = 1;
     
-    while (branchPage <= 2) {
+    while (branchPage <= 3) {
       const params = { per_page: 100, page: branchPage, sha: branch.name };
       if (sinceDate) params.since = sinceDate;
       
@@ -374,6 +374,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     totalCommits: allCommits.length,
     timeRange: getTimeRangeLabel(timeRange),
     primaryBranch,
+    primaryBranchUrl: `https://github.com/${owner}/${repo}/tree/${primaryBranch}`,
     totalBranches: activeBranches.length,
     staleBranchesCount: staleBranches.length,
     allBranchesCount: branches.length,

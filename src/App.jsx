@@ -294,23 +294,45 @@ function App() {
         {data && (
           <>
             {/* Primary Branch Info */}
-            <div style={{ 
-              background: colors.buttonBg, 
-              color: colors.buttonText, 
-              padding: '28px 32px',
-              marginBottom: '40px',
-              borderRadius: '8px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '20px'
-            }}>
+            <a
+              href={data.primaryBranchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ 
+                background: colors.buttonBg, 
+                color: colors.buttonText, 
+                padding: '28px 32px',
+                marginBottom: '40px',
+                borderRadius: '8px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '20px',
+                textDecoration: 'none',
+                cursor: 'pointer',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                border: '2px solid transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
+                e.currentTarget.style.borderColor = colors.primary;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.borderColor = 'transparent';
+              }}
+            >
               <div>
                 <div style={{ fontSize: '14px', letterSpacing: '1px', opacity: 0.7, marginBottom: '8px', textTransform: 'uppercase' }}>
                   Primary Branch
                 </div>
                 <div style={{ fontSize: '32px', fontWeight: '700', fontFamily: 'Literata, serif' }}>
                   {data.primaryBranch}
+                </div>
+                <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '4px' }}>
+                  🔗 Click to view on GitHub
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -321,7 +343,7 @@ function App() {
                   {data.merges ? data.merges.length : 0}
                 </div>
               </div>
-            </div>
+            </a>
 
             {/* Activity Summary */}
             {data.activitySummary && (
