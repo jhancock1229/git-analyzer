@@ -11,6 +11,7 @@ function App() {
   const [showModal, setShowModal] = useState(null);
   const [repoInfo, setRepoInfo] = useState(null);
   const [showStaleBranches, setShowStaleBranches] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   const timeRanges = [
     { value: 'day', label: 'Last 24 Hours' },
@@ -88,7 +89,7 @@ function App() {
 
     // Default to SortableListModal for other types
     return (
-      <SortableListModal
+      <SortableListModal darkMode={darkMode}
         title={showModal.title}
         items={showModal.data}
         onClose={() => setShowModal(null)}
@@ -96,29 +97,93 @@ function App() {
     );
   };
 
+  const colors = darkMode ? {
+    bg: '#1A1A1A',
+    text: '#E8E8E8',
+    cardBg: '#2D2D2D',
+    cardBorder: '#404040',
+    inputBg: '#2D2D2D',
+    inputBorder: '#404040',
+    buttonBg: '#E8E8E8',
+    buttonText: '#1A1A1A',
+    primary: '#0077B6',
+    infoBg: '#1E3A4F',
+    infoBorder: '#2E5A7F',
+    headerBg: '#0A0A0A',
+    modalBg: '#2D2D2D',
+    headerText: '#E8E8E8'
+  } : {
+    bg: '#FAF9F6',
+    text: '#1A1A1A',
+    cardBg: '#FFFFFF',
+    cardBorder: '#E8E8E8',
+    inputBg: '#FFFFFF',
+    inputBorder: '#E8E8E8',
+    buttonBg: '#1A1A1A',
+    buttonText: '#FAF9F6',
+    primary: '#0077B6',
+    infoBg: '#F0F8FF',
+    infoBorder: '#0077B6',
+    headerBg: '#1A1A1A',
+    modalBg: '#FFFFFF',
+    headerText: '#FAF9F6'
+  };
+
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 20px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', padding: '40px 20px', background: colors.bg, transition: 'background-color 0.3s ease' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', position: 'relative' }}>
+        {/* Dark mode toggle */}
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          style={{
+            position: 'absolute',
+            top: '0',
+            right: '0',
+            background: 'transparent',
+            border: `2px solid ${colors.text}`,
+            color: colors.text,
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontFamily: 'IBM Plex Mono, monospace',
+            transition: 'all 0.2s',
+            zIndex: 1000
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = colors.text;
+            e.currentTarget.style.color = colors.bg;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = colors.text;
+          }}
+        >
+          {darkMode ? '☀️ Light' : '🌙 Dark'}
+        </button>
+        
         {/* Header */}
-        <div style={{ marginBottom: '40px', borderBottom: '3px solid #1A1A1A', paddingBottom: '24px' }}>
+        <div style={{ marginBottom: '40px', borderBottom: `3px solid ${colors.text}`, paddingBottom: '24px' }}>
           <h1 style={{ 
             margin: '0 0 12px', 
             fontSize: '48px', 
             fontWeight: '600', 
             fontFamily: 'Literata, serif',
-            letterSpacing: '-1px'
+            letterSpacing: '-1px',
+            color: colors.text
+          }}
           }}>
             Git Repository Analyzer
           </h1>
-          <p style={{ margin: 0, fontSize: '15px', color: '#666', letterSpacing: '0.5px' }}>
+          <p style={{ margin: 0, fontSize: '15px', color: colors.text, letterSpacing: '0.5px' }}>
             ANALYZE ANY GIT REPOSITORY — SEE WHO'S WORKING ON WHAT
           </p>
         </div>
 
         {/* Input Section */}
         <div style={{ 
-          background: '#FFFFFF', 
-          border: '2px solid #E8E8E8', 
+          background: colors.cardBg, 
+          border: `2px solid ${colors.cardBorder}`, 
           padding: '32px', 
           marginBottom: '40px',
           borderRadius: '8px'
@@ -144,13 +209,14 @@ function App() {
                   width: '100%', 
                   padding: '14px', 
                   fontSize: '15px', 
-                  border: '2px solid #E8E8E8',
-                  background: '#FAFAFA',
+                  border: `2px solid ${colors.cardBorder}`,
+                  background: colors.inputBg,
+                  color: colors.text,
                   fontFamily: 'inherit',
                   outline: 'none'
                 }}
-                onFocus={(e) => e.target.style.borderColor = '#1A1A1A'}
-                onBlur={(e) => e.target.style.borderColor = '#E8E8E8'}
+                onFocus={(e) => e.target.style.borderColor = colors.primary}
+                onBlur={(e) => e.target.style.borderColor = colors.cardBorder}
               />
             </div>
             
@@ -171,8 +237,9 @@ function App() {
                 style={{ 
                   padding: '14px 40px 14px 14px', 
                   fontSize: '15px', 
-                  border: '2px solid #E8E8E8',
-                  background: '#FAFAFA',
+                  border: `2px solid ${colors.cardBorder}`,
+                  background: colors.inputBg,
+                  color: colors.text,
                   fontFamily: 'inherit',
                   cursor: 'pointer',
                   outline: 'none',
@@ -192,8 +259,8 @@ function App() {
             onClick={analyzeRepository}
             disabled={loading}
             style={{ 
-              background: '#1A1A1A', 
-              color: '#FAF9F6', 
+              background: colors.buttonBg, 
+              color: colors.buttonText, 
               border: 'none',
               padding: '14px 32px', 
               fontSize: '15px', 
@@ -229,8 +296,8 @@ function App() {
           <>
             {/* Primary Branch Info */}
             <div style={{ 
-              background: '#1A1A1A', 
-              color: '#FAF9F6', 
+              background: colors.buttonBg, 
+              color: colors.buttonText, 
               padding: '28px 32px',
               marginBottom: '40px',
               borderRadius: '8px',
@@ -298,8 +365,8 @@ function App() {
             {/* Branching Strategy Analysis */}
             {data.branchingAnalysis && (
               <div style={{ 
-                background: '#FFFFFF', 
-                border: '2px solid #E8E8E8', 
+                background: colors.cardBg, 
+                border: `2px solid ${colors.cardBorder}`, 
                 padding: '32px',
                 marginBottom: '40px',
                 borderRadius: '8px'
@@ -375,10 +442,10 @@ function App() {
                       e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
+                    <div style={{ fontSize: '12px', color: colors.text, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
                       Strategy
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: '700', color: '#1A1A1A' }}>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: colors.text }}>
                       {data.branchingAnalysis.strategy}
                     </div>
                     <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
@@ -410,10 +477,10 @@ function App() {
                       e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
+                    <div style={{ fontSize: '12px', color: colors.text, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
                       Workflow
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: '700', color: '#1A1A1A' }}>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: colors.text }}>
                       {data.branchingAnalysis.workflow}
                     </div>
                     <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
@@ -474,7 +541,7 @@ function App() {
                       >
                         <span style={{ fontSize: '14px', color: '#333' }}>{p.type}</span>
                         <span style={{ 
-                          background: '#1A1A1A', 
+                          background: colors.buttonBg, 
                           color: '#fff',
                           padding: '4px 12px',
                           borderRadius: '12px',
@@ -494,7 +561,7 @@ function App() {
             {data.graph && data.graph.length > 0 && (
               <div style={{ 
                 background: '#fff', 
-                border: '2px solid #E8E8E8', 
+                border: `2px solid ${colors.cardBorder}`, 
                 padding: '32px',
                 marginBottom: '40px',
                 borderRadius: '8px'
@@ -512,7 +579,7 @@ function App() {
                     <span style={{ 
                       fontSize: '13px', 
                       background: '#F5F5F5',
-                      color: '#666',
+                      color: colors.text,
                       padding: '4px 12px',
                       borderRadius: '4px',
                       fontWeight: '500'
@@ -548,7 +615,7 @@ function App() {
                     e.currentTarget.style.boxShadow = 'none';
                   }}
                 >
-                  <BranchDiagram 
+                  <BranchDiagram darkMode={darkMode} 
                     commits={data.graph.slice(0, 50)} 
                     primaryBranch={data.primaryBranch}
                     compact={true}
@@ -574,7 +641,7 @@ function App() {
                   padding: '12px',
                   background: '#F5F5F5',
                   fontSize: '12px',
-                  color: '#666',
+                  color: colors.text,
                   borderLeft: '3px solid #1A1A1A',
                   borderRadius: '0 4px 4px 0'
                 }}>
@@ -596,8 +663,8 @@ function App() {
                   title: `${data.contributors.length} Contributors`
                 })}
                 style={{ 
-                  background: '#FFFFFF',
-                  border: '2px solid #E8E8E8',
+                  background: colors.cardBg,
+                  border: `2px solid ${colors.cardBorder}`,
                   padding: '24px',
                   borderRadius: '8px',
                   cursor: 'pointer',
@@ -614,10 +681,10 @@ function App() {
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#1A1A1A' }}>
+                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
                   {data.contributors.length}
                 </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: '#666' }}>
+                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
                   CONTRIBUTORS
                 </div>
                 <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
@@ -637,8 +704,8 @@ function App() {
                   });
                 }}
                 style={{ 
-                  background: '#FFFFFF',
-                  border: '2px solid #E8E8E8',
+                  background: colors.cardBg,
+                  border: `2px solid ${colors.cardBorder}`,
                   padding: '24px',
                   borderRadius: '8px',
                   cursor: 'pointer',
@@ -655,10 +722,10 @@ function App() {
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#1A1A1A' }}>
+                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
                   {data.totalBranches || 0}
                 </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: '#666' }}>
+                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
                   ACTIVE BRANCHES
                 </div>
                 
@@ -682,7 +749,7 @@ function App() {
                           gap: '6px',
                           cursor: 'pointer',
                           fontSize: '11px',
-                          color: '#666'
+                          color: colors.text
                         }}
                       >
                         <input
@@ -711,8 +778,8 @@ function App() {
                   title: `${data.totalCommits.toLocaleString()} Commits`
                 })}
                 style={{ 
-                  background: '#FFFFFF',
-                  border: '2px solid #E8E8E8',
+                  background: colors.cardBg,
+                  border: `2px solid ${colors.cardBorder}`,
                   padding: '24px',
                   borderRadius: '8px',
                   cursor: 'pointer',
@@ -729,10 +796,10 @@ function App() {
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#1A1A1A' }}>
+                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
                   {data.totalCommits.toLocaleString()}
                 </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: '#666' }}>
+                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
                   TOTAL COMMITS
                 </div>
                 <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
@@ -741,15 +808,15 @@ function App() {
               </div>
 
               <div style={{ 
-                background: '#FFFFFF',
-                border: '2px solid #E8E8E8',
+                background: colors.cardBg,
+                border: `2px solid ${colors.cardBorder}`,
                 padding: '24px',
                 borderRadius: '8px'
               }}>
-                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '8px', color: '#1A1A1A' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
                   {data.timeRange}
                 </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: '#666' }}>
+                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
                   TIME PERIOD
                 </div>
               </div>
