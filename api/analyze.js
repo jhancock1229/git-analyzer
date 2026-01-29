@@ -2,7 +2,6 @@
 const GITHUB_API_BASE = 'https://api.github.com';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-// Helper to make GitHub API requests
 async function githubRequest(url, params = {}) {
   const headers = {
     'Accept': 'application/vnd.github.v3+json',
@@ -26,7 +25,6 @@ async function githubRequest(url, params = {}) {
   return response.json();
 }
 
-// Parse GitHub repo URL
 function parseGitHubUrl(repoUrl) {
   const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/\.]+)/);
   if (!match) {
@@ -35,7 +33,6 @@ function parseGitHubUrl(repoUrl) {
   return { owner: match[1], repo: match[2] };
 }
 
-// Get time range as ISO date
 function getTimeRangeDate(timeRange) {
   const now = new Date();
   const ranges = {
@@ -180,6 +177,33 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     per_page: 100
   });
   
+  // Filter to "active" branches and identify "stale" branches
+  const activeBranches = [];
+  const staleBranches = [];
+  const branchCommitCounts = new Map();
+  const staleThreshold = new Date();
+  staleThreshold.setDate(staleThreshold.getDate() - 90);
+  
+  for (const branch of branches) {
+    try {
+      const branchCommit = await githubRequest(
+        `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${branch.commit.sha}`
+      );
+      
+      const lastCommitDate = new Date(branchCommit.commit.author.date);
+      
+      if (lastCommitDate < staleThreshold) {
+        staleBranches.push({
+          ...branch,
+          lastCommit: branchCommit.commit.author.date,
+          daysSinceLastCommit: Math.floor((new Date() - lastCommitDate) / (1000 * 60 * 60 * 24))
+        });
+      }
+    } catch (error) {
+      // Skip if can't check
+    }
+  }
+  
   let allCommits = [];
   const commitMap = new Map();
   
@@ -207,9 +231,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
         for (const commit of commits) {
           if (!commitMap.has(commit.sha)) {
             commitMap.set(commit.sha, { commit, branches: [branch.name] });
+            branchCommitCounts.set(branch.name, (branchCommitCounts.get(branch.name) || 0) + 1);
           } else {
             commitMap.get(commit.sha).branches.push(branch.name);
           }
+        }
+        
+        if (commits.length > 0 && !activeBranches.find(b => b.name === branch.name)) {
+          activeBranches.push(branch);
         }
         
         if (commits.length < 100) break;
@@ -309,34 +338,138 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }));
   
   const branchingAnalysis = analyzeBranchingPatterns(
-    branches,
+    activeBranches,
     graphNodes,
     mergedPRs,
     primaryBranch
   );
   
-  const formattedBranches = branches.map(branch => ({
+  const formattedBranches = activeBranches.map(branch => ({
     name: branch.name,
-    isPrimary: branch.name === primaryBranch
+    isPrimary: branch.name === primaryBranch,
+    commitCount: branchCommitCounts.get(branch.name) || 0,
+    isStale: false
   }));
+  
+  const formattedStaleBranches = staleBranches.map(branch => ({
+    name: branch.name,
+    isPrimary: branch.name === primaryBranch,
+    lastCommit: branch.lastCommit,
+    daysSinceLastCommit: branch.daysSinceLastCommit,
+    isStale: true
+  }));
+  
+  // Generate activity summary
+  const topContributors = Array.from(contributors.values())
+    .sort((a, b) => b.commits - a.commits)
+    .slice(0, 5);
+  
+  const commitMessages = graphNodes.map(node => node.subject);
+  
+  const summary = generateActivitySummary({
+    timeRange: getTimeRangeLabel(timeRange),
+    totalCommits: allCommits.length,
+    contributorCount: contributors.size,
+    topContributors,
+    commitMessages,
+    activeBranches: activeBranches.length,
+    staleBranches: staleBranches.length,
+    mergeCount: merges.length,
+    branchingStrategy: branchingAnalysis.strategy,
+    workflow: branchingAnalysis.workflow
+  });
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
     totalCommits: allCommits.length,
     timeRange: getTimeRangeLabel(timeRange),
     primaryBranch: primaryBranch,
-    totalBranches: branches.length,
+    totalBranches: activeBranches.length,
+    staleBranchesCount: staleBranches.length,
+    allBranchesCount: branches.length,
     merges: merges,
     branches: formattedBranches,
+    staleBranches: formattedStaleBranches,
     timeline: timeline,
     graph: graphNodes,
-    branchingAnalysis: branchingAnalysis
+    branchingAnalysis: branchingAnalysis,
+    activitySummary: summary
   };
+}
+
+function generateActivitySummary(data) {
+  const parts = [];
+  
+  // Opening
+  parts.push(`Over ${data.timeRange.toLowerCase()}, this repository had ${data.totalCommits} commits from ${data.contributorCount} ${data.contributorCount === 1 ? 'contributor' : 'contributors'}.`);
+  
+  // Top contributors
+  if (data.topContributors.length > 0) {
+    const topNames = data.topContributors.slice(0, 3).map(c => `${c.name} (${c.commits})`).join(', ');
+    parts.push(`Most active contributors: ${topNames}.`);
+  }
+  
+  // Commit message summary
+  if (data.commitMessages && data.commitMessages.length > 0) {
+    const keywords = extractKeywords(data.commitMessages);
+    if (keywords.length > 0) {
+      parts.push(`Key areas of work: ${keywords.slice(0, 5).join(', ')}.`);
+    }
+  }
+  
+  // Branch activity
+  if (data.activeBranches > 1) {
+    parts.push(`Development occurred across ${data.activeBranches} active branches.`);
+  }
+  
+  // Stale branches warning
+  if (data.staleBranches > 0) {
+    parts.push(`⚠️ ${data.staleBranches} stale ${data.staleBranches === 1 ? 'branch' : 'branches'} detected (no activity in 90+ days).`);
+  }
+  
+  // Merges
+  if (data.mergeCount > 0) {
+    parts.push(`${data.mergeCount} merge commits indicate active collaboration.`);
+  }
+  
+  // Strategy
+  parts.push(`The team is using ${data.branchingStrategy} with a ${data.workflow} workflow.`);
+  
+  return parts.join(' ');
+}
+
+function extractKeywords(commitMessages) {
+  const stopWords = new Set([
+    'add', 'added', 'adds', 'update', 'updated', 'updates', 'fix', 'fixed', 'fixes',
+    'remove', 'removed', 'removes', 'change', 'changed', 'changes', 'improve', 'improved',
+    'refactor', 'refactored', 'merge', 'merged', 'branch', 'commit', 'the', 'a', 'an',
+    'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'from', 'by',
+    'is', 'was', 'are', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do',
+    'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can',
+    'this', 'that', 'these', 'those', 'some', 'all', 'any', 'more', 'most', 'other'
+  ]);
+  
+  const wordFrequency = new Map();
+  
+  commitMessages.forEach(msg => {
+    const words = msg.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3 && !stopWords.has(word));
+    
+    words.forEach(word => {
+      wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
+    });
+  });
+  
+  return Array.from(wordFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([word]) => word);
 }
 
 // Vercel serverless function handler
 export default async function handler(req, res) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');

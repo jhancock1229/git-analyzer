@@ -488,13 +488,13 @@ export function SortableListModal({ title, items, onClose }) {
                     style={{ 
                       fontSize: '16px', 
                       fontWeight: '600', 
-                      color: '#0077B6', 
+                      color: item.isStale ? '#999' : '#0077B6', 
                       marginBottom: '8px', 
                       display: 'flex', 
                       alignItems: 'center', 
                       gap: '8px',
                       cursor: 'pointer',
-                      textDecoration: 'underline'
+                      textDecoration: item.isStale ? 'line-through' : 'underline'
                     }}
                   >
                     {item.name}
@@ -503,7 +503,17 @@ export function SortableListModal({ title, items, onClose }) {
                         PRIMARY
                       </span>
                     )}
+                    {item.isStale && (
+                      <span style={{ background: '#FFA500', color: '#fff', padding: '2px 8px', fontSize: '11px', borderRadius: '4px' }}>
+                        STALE ({item.daysSinceLastCommit} days)
+                      </span>
+                    )}
                   </div>
+                  {item.isStale && (
+                    <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+                      Last commit: {new Date(item.lastCommit).toLocaleDateString()}
+                    </div>
+                  )}
                 </>
               )}
               
