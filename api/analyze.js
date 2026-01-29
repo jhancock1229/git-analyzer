@@ -150,8 +150,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const merges = allCommits.filter(c => c.parents && c.parents.length > 1).slice(0, 10)
     .map(c => ({ author: c.commit.author.name, branchName: 'merged', time: new Date(c.commit.author.date).toLocaleString() }));
   
+  // Branching strategy detection
+  const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
+  
   // Simple summary
-  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} developers contributing.`;
+  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} developers contributing. The team is using ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
@@ -166,9 +169,80 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     staleBranches: staleBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, lastCommit: b.lastCommit, daysSinceLastCommit: b.daysSinceLastCommit, isStale: true })),
     timeline: [],
     graph: graphNodes,
-    branchingAnalysis: { patterns: [], strategy: 'Unknown', strategyExplanation: '', insights: [], workflow: 'Unknown', workflowExplanation: '', detectionCriteria: [] },
+    branchingAnalysis,
     activitySummary: summary
   };
+}
+
+function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch) {
+  const analysis = {
+    patterns: [],
+    strategy: 'Unknown',
+    strategyExplanation: '',
+    insights: [],
+    workflow: 'Unknown',
+    workflowExplanation: '',
+    detectionCriteria: [],
+    branchCounts: {}
+  };
+  
+  const featureBranches = branches.filter(b => b.name.includes('feature'));
+  const bugfixBranches = branches.filter(b => b.name.includes('fix'));
+  const developBranches = branches.filter(b => b.name.includes('develop') || b.name.includes('dev'));
+  const hotfixBranches = branches.filter(b => b.name.includes('hotfix'));
+  const releaseBranches = branches.filter(b => b.name.includes('release'));
+  
+  analysis.branchCounts = {
+    feature: featureBranches.length,
+    bugfix: bugfixBranches.length,
+    develop: developBranches.length,
+    hotfix: hotfixBranches.length,
+    release: releaseBranches.length,
+    total: branches.length
+  };
+  
+  const totalCommits = graphNodes.length;
+  const mergeCommits = graphNodes.filter(n => n.isMerge).length;
+  const mergeRatio = totalCommits > 0 ? (mergeCommits / totalCommits * 100).toFixed(1) : 0;
+  const prCount = mergedPRs.length;
+  const prRatio = totalCommits > 0 ? (prCount / totalCommits * 100).toFixed(1) : 0;
+  const { feature, bugfix, develop, hotfix, release, total } = analysis.branchCounts;
+  
+  if (prCount > 10 || prRatio > 10) {
+    analysis.workflow = 'Fork + Pull Request';
+    analysis.workflowExplanation = 'Contributors fork the repository and submit pull requests.';
+    analysis.detectionCriteria = [`${prCount} merged PRs`, `${prRatio}% PR merge ratio`];
+  } else if (total <= 3) {
+    analysis.workflow = 'Trunk-Based Development';
+    analysis.workflowExplanation = 'Few branches with most work on main.';
+    analysis.detectionCriteria = [`Only ${total} branches`];
+  } else {
+    analysis.workflow = 'Branch-based Development';
+    analysis.workflowExplanation = 'Multiple branches with feature workflow.';
+    analysis.detectionCriteria = [`${total} active branches`];
+  }
+  
+  if (develop > 0 && (feature > 0 || release > 0)) {
+    analysis.strategy = 'Git Flow';
+    analysis.strategyExplanation = 'Structured branching with main, develop, and feature/release branches.';
+  } else if (feature > 3) {
+    analysis.strategy = 'GitHub Flow';
+    analysis.strategyExplanation = 'Simple workflow with main as production-ready and feature branches.';
+  } else if (total <= 3) {
+    analysis.strategy = 'Trunk-Based Development';
+    analysis.strategyExplanation = 'Minimal branching with quick merges.';
+  } else {
+    analysis.strategy = 'Custom Strategy';
+    analysis.strategyExplanation = 'Unique branching pattern.';
+  }
+  
+  if (feature > 0) analysis.patterns.push({ type: 'Feature Branches', count: feature });
+  if (bugfix > 0) analysis.patterns.push({ type: 'Bugfix Branches', count: bugfix });
+  if (hotfix > 0) analysis.patterns.push({ type: 'Hotfix Branches', count: hotfix });
+  if (develop > 0) analysis.patterns.push({ type: 'Development Branches', count: develop });
+  if (release > 0) analysis.patterns.push({ type: 'Release Branches', count: release });
+  
+  return analysis;
 }
 
 export default async function handler(req, res) {
