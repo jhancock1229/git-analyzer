@@ -293,10 +293,16 @@ function generateActivitySummary(data) {
       parts.push(`What's new: ${changeAnalysis.capabilities.join('; ')}.`);
     }
     
-    // Focus areas
+    // Focus areas with context
     if (changeAnalysis.keywords.length > 0) {
-      const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
-      parts.push(`Primary focus areas: ${focusAreas}.`);
+      const contextualAreas = analyzeKeywordContext(changeAnalysis.keywords, data.commitMessages);
+      if (contextualAreas.length > 0) {
+        parts.push(`Work focused on: ${contextualAreas.join('; ')}.`);
+      } else {
+        // Fallback to simple list
+        const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
+        parts.push(`Primary focus areas: ${focusAreas}.`);
+      }
     }
     
     // Notable impacts
@@ -335,6 +341,80 @@ function generateActivitySummary(data) {
   parts.push(`The team follows ${data.branchingStrategy} with ${data.workflow.toLowerCase()}.`);
   
   return parts.join(' ');
+}
+
+function analyzeKeywordContext(keywords, commitMessages) {
+  // For each keyword, find what action was taken with it
+  const contextualAreas = [];
+  
+  keywords.slice(0, 5).forEach(keyword => {
+    // Find commits that mention this keyword
+    const relatedCommits = commitMessages.filter(msg => 
+      msg.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (relatedCommits.length === 0) return;
+    
+    // Determine what was done with this keyword
+    let action = '';
+    let count = 0;
+    
+    // Check for common patterns
+    const added = relatedCommits.filter(msg => /\b(add|added|implement|new|introduce)\b/i.test(msg)).length;
+    const fixed = relatedCommits.filter(msg => /\b(fix|fixed|resolve|bug)\b/i.test(msg)).length;
+    const improved = relatedCommits.filter(msg => /\b(improve|improved|enhance|better|optimize)\b/i.test(msg)).length;
+    const updated = relatedCommits.filter(msg => /\b(update|updated|refactor|clean)\b/i.test(msg)).length;
+    const removed = relatedCommits.filter(msg => /\b(remove|removed|delete)\b/i.test(msg)).length;
+    
+    // Determine primary action
+    if (added > 0) {
+      action = 'added';
+      count = added;
+    } else if (fixed > 0) {
+      action = 'fixed';
+      count = fixed;
+    } else if (improved > 0) {
+      action = 'improved';
+      count = improved;
+    } else if (updated > 0) {
+      action = 'updated';
+      count = updated;
+    } else if (removed > 0) {
+      action = 'removed';
+      count = removed;
+    }
+    
+    // Try to extract more specific context from commit messages
+    let specificContext = '';
+    
+    // Look for patterns like "Add X for Y" or "Fix X in Y"
+    for (const msg of relatedCommits.slice(0, 3)) {
+      const lower = msg.toLowerCase();
+      
+      // Pattern: "keyword for/in/to something"
+      const contextMatch = msg.match(new RegExp(`${keyword}[\\s\\w]*?\\s+(?:for|in|to|of|with)\\s+([\\w\\s]{5,30})`, 'i'));
+      if (contextMatch && contextMatch[1]) {
+        const context = contextMatch[1].trim().replace(/\s+/g, ' ');
+        if (context.length > 4 && context.length < 35) {
+          specificContext = ` in ${context}`;
+          break;
+        }
+      }
+    }
+    
+    // Build the contextual description
+    if (action && count > 0) {
+      const keywordDisplay = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+      
+      if (count === 1) {
+        contextualAreas.push(`${keywordDisplay} ${action}${specificContext}`);
+      } else {
+        contextualAreas.push(`${keywordDisplay} ${action} (${count} changes)${specificContext}`);
+      }
+    }
+  });
+  
+  return contextualAreas;
 }
 
 function analyzeChanges(commitMessages) {
