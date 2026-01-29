@@ -277,7 +277,51 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const commitMap = new Map();
   
   // Increase to 20 branches and 3 pages per branch for more complete data
+  // ALWAYS fetch primary branch first without time filter to ensure we get recent commits
+  const primaryBranchObj = branches.find(b => b.name === primaryBranch);
+  if (primaryBranchObj) {
+    let branchPage = 1;
+    while (branchPage <= 3) {
+      const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
+      // Don't apply time filter for primary branch to always show recent activity
+      
+      try {
+        const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
+        if (commits.length === 0) break;
+        
+        for (const commit of commits) {
+          const commitDate = new Date(commit.commit.author.date);
+          
+          // Only include if within time range OR always include if no time range specified
+          const includeCommit = !sinceDate || commitDate >= new Date(sinceDate);
+          
+          if (includeCommit && !commitMap.has(commit.sha)) {
+            commitMap.set(commit.sha, { commit, branches: [primaryBranchObj.name] });
+            branchCommitCounts.set(primaryBranchObj.name, (branchCommitCounts.get(primaryBranchObj.name) || 0) + 1);
+            if (!branchLastSeen.has(primaryBranchObj.name) || commitDate > branchLastSeen.get(primaryBranchObj.name)) {
+              branchLastSeen.set(primaryBranchObj.name, commitDate);
+            }
+          } else if (includeCommit) {
+            commitMap.get(commit.sha).branches.push(primaryBranchObj.name);
+          }
+        }
+        
+        if (commits.length > 0 && !activeBranches.find(b => b.name === primaryBranchObj.name)) {
+          activeBranches.push(primaryBranchObj);
+        }
+        
+        if (commits.length < 100) break;
+        branchPage++;
+      } catch (error) {
+        break;
+      }
+    }
+  }
+  
+  // Now fetch other branches
   for (const branch of branches.slice(0, 20)) {
+    if (branch.name === primaryBranch) continue; // Skip primary, already fetched
+    
     let branchPage = 1;
     
     while (branchPage <= 3) {
@@ -315,6 +359,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   allCommits = Array.from(commitMap.values()).map(item => ({ ...item.commit, branches: item.branches }));
   allCommits.sort((a, b) => new Date(b.commit.author.date) - new Date(a.commit.author.date));
+  
+  // Always ensure primary branch is in active branches
+  if (!activeBranches.find(b => b.name === primaryBranch)) {
+    const primaryBranchObj = branches.find(b => b.name === primaryBranch);
+    if (primaryBranchObj) {
+      activeBranches.push(primaryBranchObj);
+    }
+  }
   
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - 90);
