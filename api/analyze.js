@@ -120,6 +120,116 @@ function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch
   return analysis;
 }
 
+async function detectCICDTools(owner, repo) {
+  const tools = {
+    cicd: [],
+    containers: false,
+    testing: [],
+    coverage: false,
+    linting: false,
+    security: []
+  };
+  
+  try {
+    // Check for CI/CD config files
+    const cicdFiles = [
+      { path: '.github/workflows', service: 'GitHub Actions' },
+      { path: '.gitlab-ci.yml', service: 'GitLab CI' },
+      { path: '.travis.yml', service: 'Travis CI' },
+      { path: '.circleci/config.yml', service: 'CircleCI' },
+      { path: 'Jenkinsfile', service: 'Jenkins' },
+      { path: '.drone.yml', service: 'Drone CI' },
+      { path: 'azure-pipelines.yml', service: 'Azure Pipelines' }
+    ];
+    
+    for (const file of cicdFiles) {
+      try {
+        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
+        tools.cicd.push(file.service);
+      } catch (e) {
+        // File doesn't exist
+      }
+    }
+    
+    // Check for container files
+    try {
+      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/Dockerfile`);
+      tools.containers = true;
+    } catch (e) {}
+    
+    try {
+      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/docker-compose.yml`);
+      tools.containers = true;
+    } catch (e) {}
+    
+    // Check for testing frameworks
+    const testFiles = [
+      { path: 'package.json', frameworks: ['jest', 'mocha', 'jasmine', 'vitest', 'cypress'] },
+      { path: 'requirements.txt', frameworks: ['pytest', 'unittest'] },
+      { path: 'pom.xml', frameworks: ['junit'] },
+      { path: 'Gemfile', frameworks: ['rspec', 'minitest'] },
+      { path: 'go.mod', frameworks: ['testing'] }
+    ];
+    
+    for (const file of testFiles) {
+      try {
+        const content = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
+        if (content.content) {
+          const decoded = atob(content.content);
+          for (const framework of file.frameworks) {
+            if (decoded.toLowerCase().includes(framework)) {
+              if (!tools.testing.includes(framework)) {
+                tools.testing.push(framework);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // Check for coverage tools
+    const coverageIndicators = ['codecov.yml', '.coveragerc', 'coverage', 'nyc', 'istanbul'];
+    try {
+      const packageJson = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/package.json`);
+      if (packageJson.content) {
+        const decoded = atob(packageJson.content);
+        for (const indicator of coverageIndicators) {
+          if (decoded.toLowerCase().includes(indicator)) {
+            tools.coverage = true;
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    // Check for linting
+    const lintFiles = ['.eslintrc', '.pylintrc', '.rubocop.yml', 'golangci.yml', 'tslint.json'];
+    for (const file of lintFiles) {
+      try {
+        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file}`);
+        tools.linting = true;
+        break;
+      } catch (e) {}
+    }
+    
+    // Check for security scanning
+    try {
+      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.github/dependabot.yml`);
+      tools.security.push('Dependabot');
+    } catch (e) {}
+    
+    try {
+      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.snyk`);
+      tools.security.push('Snyk');
+    } catch (e) {}
+    
+  } catch (error) {
+    // If detection fails, return empty tools
+  }
+  
+  return tools;
+}
+
 async function analyzeGitHubRepo(owner, repo, timeRange) {
   const sinceDate = getTimeRangeDate(timeRange);
   
@@ -223,8 +333,44 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   
-  // Simple but informative summary
-  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing. The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
+  // Detect CI/CD and tooling
+  const cicdTools = await detectCICDTools(owner, repo);
+  
+  // Build summary with CI/CD info
+  let summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing.`;
+  
+  // Add engineering practices
+  const practices = [];
+  
+  if (cicdTools.cicd.length > 0) {
+    practices.push(`automated via ${cicdTools.cicd.join(', ')}`);
+  }
+  
+  if (cicdTools.containers) {
+    practices.push('containerized with Docker');
+  }
+  
+  if (cicdTools.testing.length > 0) {
+    practices.push(`tested with ${cicdTools.testing.slice(0, 2).join(', ')}`);
+  }
+  
+  if (cicdTools.coverage) {
+    practices.push('tracks code coverage');
+  }
+  
+  if (cicdTools.linting) {
+    practices.push('uses code linting');
+  }
+  
+  if (cicdTools.security.length > 0) {
+    practices.push(`secured with ${cicdTools.security.join(', ')}`);
+  }
+  
+  if (practices.length > 0) {
+    summary += ` Engineering practices: ${practices.join('; ')}.`;
+  }
+  
+  summary += ` The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
