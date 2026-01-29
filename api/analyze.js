@@ -288,6 +288,11 @@ function generateActivitySummary(data) {
       parts.push(`Key deliverables: ${deliverables.join(', ')}.`);
     }
     
+    // What's new - actual functional improvements
+    if (changeAnalysis.capabilities && changeAnalysis.capabilities.length > 0) {
+      parts.push(`What's new: ${changeAnalysis.capabilities.join('; ')}.`);
+    }
+    
     // Focus areas
     if (changeAnalysis.keywords.length > 0) {
       const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
@@ -342,7 +347,8 @@ function analyzeChanges(commitMessages) {
     docs: 0,
     performance: 0,
     security: 0,
-    breaking: 0
+    breaking: 0,
+    capabilities: [] // Track what's new
   };
   
   const stopWords = new Set([
@@ -353,19 +359,36 @@ function analyzeChanges(commitMessages) {
   ]);
   
   const wordFrequency = new Map();
+  const allCapabilities = [];
   
   commitMessages.forEach(msg => {
     const lower = msg.toLowerCase();
     
-    // Count change types
-    if (/\b(feat|feature|add|new|implement)\b/i.test(msg)) analysis.features++;
-    if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) analysis.bugfixes++;
-    if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) analysis.improvements++;
-    if (/\b(test|spec|jest|mocha|unit)\b/i.test(msg)) analysis.tests++;
-    if (/\b(doc|docs|documentation|readme)\b/i.test(msg)) analysis.docs++;
-    if (/\b(performance|perf|speed|faster)\b/i.test(msg)) analysis.performance++;
-    if (/\b(security|vulnerability|cve|auth)\b/i.test(msg)) analysis.security++;
-    if (/\b(breaking|break)\b/i.test(msg)) analysis.breaking++;
+    try {
+      // Count change types AND extract capabilities
+      if (/\b(feat|feature|add|new|implement)\b/i.test(msg)) {
+        analysis.features++;
+        const caps = extractCapability(msg);
+        allCapabilities.push(...caps);
+      }
+      if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
+        analysis.bugfixes++;
+        const caps = extractCapability(msg);
+        allCapabilities.push(...caps);
+      }
+      if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
+        analysis.improvements++;
+        const caps = extractCapability(msg);
+        allCapabilities.push(...caps);
+      }
+      if (/\b(test|spec|jest|mocha|unit)\b/i.test(msg)) analysis.tests++;
+      if (/\b(doc|docs|documentation|readme)\b/i.test(msg)) analysis.docs++;
+      if (/\b(performance|perf|speed|faster)\b/i.test(msg)) analysis.performance++;
+      if (/\b(security|vulnerability|cve|auth)\b/i.test(msg)) analysis.security++;
+      if (/\b(breaking|break)\b/i.test(msg)) analysis.breaking++;
+    } catch (e) {
+      // Skip if extraction fails
+    }
     
     // Extract keywords
     const words = lower
@@ -384,7 +407,64 @@ function analyzeChanges(commitMessages) {
     .slice(0, 10)
     .map(([word]) => word);
   
+  // Deduplicate capabilities
+  const capabilityFreq = new Map();
+  allCapabilities.forEach(cap => {
+    const normalized = cap.toLowerCase().trim();
+    capabilityFreq.set(normalized, (capabilityFreq.get(normalized) || 0) + 1);
+  });
+  
+  analysis.capabilities = Array.from(capabilityFreq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([text]) => text);
+  
   return analysis;
+}
+
+function extractCapability(commitMsg) {
+  const capabilities = [];
+  const msg = commitMsg.trim();
+  
+  // Pattern 1: "Add X" or "Implement X"
+  if (/^(?:add|added|implement|implemented|introduce|introduced)/i.test(msg)) {
+    const match = msg.match(/^(?:add|added|implement|implemented|introduce|introduced)\s+(.+?)(?:\s+support|\s+feature|\s+functionality)?$/i);
+    if (match && match[1]) {
+      const feature = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (feature.length > 5 && feature.length < 60) {
+        capabilities.push(feature);
+      }
+    }
+  }
+  
+  // Pattern 2: "Fix X" - what now works
+  if (/^(?:fix|fixed|resolve|resolved)/i.test(msg)) {
+    const match = msg.match(/^(?:fix|fixed|resolve|resolved)\s+(.+?)$/i);
+    if (match && match[1]) {
+      const fix = match[1].trim().replace(/^(the|a|an)\s+/i, '').replace(/\s+(?:issue|bug|problem).*$/i, '');
+      if (fix.length > 5 && fix.length < 60) {
+        capabilities.push(`${fix} now works`);
+      }
+    }
+  }
+  
+  // Pattern 3: "Improve X" - what's better
+  if (/^(?:improve|improved|enhance|enhanced|optimize|optimized)/i.test(msg)) {
+    const match = msg.match(/^(?:improve|improved|enhance|enhanced|optimize|optimized)\s+(.+?)$/i);
+    if (match && match[1]) {
+      const improvement = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (improvement.length > 5 && improvement.length < 60) {
+        capabilities.push(`better ${improvement}`);
+      }
+    }
+  }
+  
+  return capabilities.filter(cap => 
+    cap.length > 8 && 
+    cap.length < 80 &&
+    !cap.match(/^\d+$/) &&
+    !cap.includes('http')
+  );
 }
 
 export default async function handler(req, res) {
