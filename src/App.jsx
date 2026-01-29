@@ -390,114 +390,234 @@ function App() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
                   {/* CI/CD */}
-                  {data.cicdTools.cicd.length > 0 && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.cicd.length > 0 && data.cicdTools.cicd.map((tool, idx) => (
+                    <a
+                      key={idx}
+                      href={tool.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         ⚙️ CI/CD Pipeline
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {data.cicdTools.cicd.join(', ')}
+                        {tool.name}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {tool.path}
+                      </div>
+                    </a>
+                  ))}
 
                   {/* Containers */}
-                  {data.cicdTools.containers && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.containers.length > 0 && data.cicdTools.containers.map((container, idx) => (
+                    <a
+                      key={idx}
+                      href={container.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         🐳 Containerization
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        Docker
+                        {container.name}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {container.path}
+                      </div>
+                    </a>
+                  ))}
 
                   {/* Testing */}
-                  {data.cicdTools.testing.length > 0 && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.testing.length > 0 && data.cicdTools.testing.map((test, idx) => (
+                    <a
+                      key={idx}
+                      href={test.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         ✅ Testing
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {data.cicdTools.testing.join(', ')}
+                        {test.framework}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {test.file}
+                      </div>
+                    </a>
+                  ))}
 
                   {/* Coverage */}
-                  {data.cicdTools.coverage && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.coverage.length > 0 && data.cicdTools.coverage.map((cov, idx) => (
+                    <a
+                      key={idx}
+                      href={cov.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         📊 Code Coverage
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        Enabled
+                        {cov.name}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {cov.path}
+                      </div>
+                    </a>
+                  ))}
 
                   {/* Linting */}
-                  {data.cicdTools.linting && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.linting.length > 0 && data.cicdTools.linting.map((lint, idx) => (
+                    <a
+                      key={idx}
+                      href={lint.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         🔍 Code Linting
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        Enabled
+                        {lint.name}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {lint.path}
+                      </div>
+                    </a>
+                  ))}
 
                   {/* Security */}
-                  {data.cicdTools.security.length > 0 && (
-                    <div style={{
-                      padding: '16px',
-                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                      borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
-                    }}>
+                  {data.cicdTools.security.length > 0 && data.cicdTools.security.map((sec, idx) => (
+                    <a
+                      key={idx}
+                      href={sec.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
                       <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
                         🔒 Security Scanning
                       </div>
                       <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {data.cicdTools.security.join(', ')}
+                        {sec.name}
                       </div>
-                    </div>
-                  )}
+                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
+                        📁 {sec.path}
+                      </div>
+                    </a>
+                  ))}
                 </div>
 
                 {/* No tools detected message */}
                 {data.cicdTools.cicd.length === 0 && 
-                 !data.cicdTools.containers && 
+                 data.cicdTools.containers.length === 0 && 
                  data.cicdTools.testing.length === 0 && 
-                 !data.cicdTools.coverage && 
-                 !data.cicdTools.linting && 
+                 data.cicdTools.coverage.length === 0 && 
+                 data.cicdTools.linting.length === 0 && 
                  data.cicdTools.security.length === 0 && (
                   <div style={{
                     padding: '20px',

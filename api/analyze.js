@@ -123,10 +123,10 @@ function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch
 async function detectCICDTools(owner, repo) {
   const tools = {
     cicd: [],
-    containers: false,
+    containers: [],
     testing: [],
-    coverage: false,
-    linting: false,
+    coverage: [],
+    linting: [],
     security: []
   };
   
@@ -145,7 +145,7 @@ async function detectCICDTools(owner, repo) {
     for (const file of cicdFiles) {
       try {
         await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
-        tools.cicd.push(file.service);
+        tools.cicd.push({ name: file.service, path: file.path, url: `https://github.com/${owner}/${repo}/tree/main/${file.path}` });
       } catch (e) {
         // File doesn't exist
       }
@@ -154,12 +154,12 @@ async function detectCICDTools(owner, repo) {
     // Check for container files
     try {
       await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/Dockerfile`);
-      tools.containers = true;
+      tools.containers.push({ name: 'Dockerfile', path: 'Dockerfile', url: `https://github.com/${owner}/${repo}/blob/main/Dockerfile` });
     } catch (e) {}
     
     try {
       await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/docker-compose.yml`);
-      tools.containers = true;
+      tools.containers.push({ name: 'docker-compose.yml', path: 'docker-compose.yml', url: `https://github.com/${owner}/${repo}/blob/main/docker-compose.yml` });
     } catch (e) {}
     
     // Check for testing frameworks
@@ -178,8 +178,12 @@ async function detectCICDTools(owner, repo) {
           const decoded = atob(content.content);
           for (const framework of file.frameworks) {
             if (decoded.toLowerCase().includes(framework)) {
-              if (!tools.testing.includes(framework)) {
-                tools.testing.push(framework);
+              if (!tools.testing.find(t => t.framework === framework)) {
+                tools.testing.push({ 
+                  framework, 
+                  file: file.path, 
+                  url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` 
+                });
               }
             }
           }
@@ -188,39 +192,65 @@ async function detectCICDTools(owner, repo) {
     }
     
     // Check for coverage tools
-    const coverageIndicators = ['codecov.yml', '.coveragerc', 'coverage', 'nyc', 'istanbul'];
-    try {
-      const packageJson = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/package.json`);
-      if (packageJson.content) {
-        const decoded = atob(packageJson.content);
-        for (const indicator of coverageIndicators) {
-          if (decoded.toLowerCase().includes(indicator)) {
-            tools.coverage = true;
-            break;
-          }
-        }
-      }
-    } catch (e) {}
+    const coverageFiles = [
+      { path: 'codecov.yml', name: 'Codecov' },
+      { path: '.coveragerc', name: 'Coverage.py' },
+      { path: '.nycrc', name: 'nyc' },
+      { path: 'package.json', name: 'Coverage config' }
+    ];
+    
+    for (const file of coverageFiles) {
+      try {
+        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
+        tools.coverage.push({ 
+          name: file.name, 
+          path: file.path, 
+          url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` 
+        });
+        break; // Only add one
+      } catch (e) {}
+    }
     
     // Check for linting
-    const lintFiles = ['.eslintrc', '.pylintrc', '.rubocop.yml', 'golangci.yml', 'tslint.json'];
+    const lintFiles = [
+      { path: '.eslintrc', name: 'ESLint' },
+      { path: '.eslintrc.js', name: 'ESLint' },
+      { path: '.eslintrc.json', name: 'ESLint' },
+      { path: '.pylintrc', name: 'Pylint' },
+      { path: '.rubocop.yml', name: 'RuboCop' },
+      { path: 'golangci.yml', name: 'GolangCI' },
+      { path: 'tslint.json', name: 'TSLint' }
+    ];
+    
     for (const file of lintFiles) {
       try {
-        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file}`);
-        tools.linting = true;
-        break;
+        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
+        tools.linting.push({ 
+          name: file.name, 
+          path: file.path, 
+          url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` 
+        });
+        break; // Only add one
       } catch (e) {}
     }
     
     // Check for security scanning
     try {
       await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.github/dependabot.yml`);
-      tools.security.push('Dependabot');
+      tools.security.push({ 
+        name: 'Dependabot', 
+        path: '.github/dependabot.yml', 
+        url: `https://github.com/${owner}/${repo}/blob/main/.github/dependabot.yml` 
+      });
     } catch (e) {}
     
     try {
       await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.snyk`);
-      tools.security.push('Snyk');
+      tools.security.push({ 
+        name: 'Snyk', 
+        path: '.snyk', 
+        url: `https://github.com/${owner}/${repo}/blob/main/.snyk` 
+      });
     } catch (e) {}
     
   } catch (error) {
