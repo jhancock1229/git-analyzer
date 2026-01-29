@@ -383,6 +383,149 @@ function App() {
               </div>
             )}
 
+            {/* Most Recent Commit Details */}
+            {data.recentCommitAnalysis && (
+              <div style={{
+                background: colors.cardBg,
+                border: `2px solid ${colors.cardBorder}`,
+                borderRadius: '8px',
+                padding: '24px 32px',
+                marginBottom: '40px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <span style={{ fontSize: '24px' }}>🔄</span>
+                  <h3 style={{
+                    margin: 0,
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    fontFamily: 'Literata, serif'
+                  }}>
+                    Most Recent Change
+                  </h3>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    marginBottom: '8px'
+                  }}>
+                    {data.recentCommitAnalysis.humanDescription}
+                  </div>
+                  <div style={{
+                    fontSize: '13px',
+                    color: colors.text,
+                    opacity: 0.7,
+                    marginBottom: '12px'
+                  }}>
+                    by {data.recentCommitAnalysis.author} • {new Date(data.recentCommitAnalysis.date).toLocaleString()}
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{
+                    padding: '12px',
+                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                    borderRadius: '6px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#00AA00' }}>
+                      +{data.recentCommitAnalysis.additions}
+                    </div>
+                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
+                      additions
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: '12px',
+                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                    borderRadius: '6px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#DD0000' }}>
+                      -{data.recentCommitAnalysis.deletions}
+                    </div>
+                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
+                      deletions
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: '12px',
+                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                    borderRadius: '6px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>
+                      {data.recentCommitAnalysis.filesChanged}
+                    </div>
+                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
+                      files changed
+                    </div>
+                  </div>
+                </div>
+
+                {data.recentCommitAnalysis.changes.length > 0 && (
+                  <details style={{ marginTop: '16px' }}>
+                    <summary style={{
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: colors.text,
+                      padding: '8px 0'
+                    }}>
+                      View changed files ({data.recentCommitAnalysis.changes.length})
+                    </summary>
+                    <div style={{
+                      marginTop: '12px',
+                      maxHeight: '300px',
+                      overflowY: 'auto',
+                      fontSize: '13px',
+                      fontFamily: 'IBM Plex Mono, monospace'
+                    }}>
+                      {data.recentCommitAnalysis.changes.map((change, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: '8px',
+                            marginBottom: '4px',
+                            background: darkMode ? '#2D2D2D' : '#F5F5F5',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <span style={{ color: colors.text }}>
+                            {change.status === 'added' && '✅ '}
+                            {change.status === 'removed' && '❌ '}
+                            {change.status === 'modified' && '✏️ '}
+                            {change.filename}
+                          </span>
+                          <span style={{ color: colors.text, opacity: 0.6, fontSize: '12px' }}>
+                            <span style={{ color: '#00AA00' }}>+{change.additions}</span>
+                            {' '}
+                            <span style={{ color: '#DD0000' }}>-{change.deletions}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
             {/* CI/CD & Engineering Tools */}
             {data.cicdTools && (
               <div style={{

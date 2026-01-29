@@ -161,6 +161,144 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
+async function analyzeMostRecentCommit(owner, repo, primaryBranch) {
+  try {
+    // Get the most recent commit on primary branch
+    const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, { 
+      sha: primaryBranch, 
+      per_page: 1 
+    });
+    
+    if (commits.length === 0) return null;
+    
+    const latestCommit = commits[0];
+    const commitSha = latestCommit.sha;
+    
+    // Get the commit details with file changes
+    const commitDetails = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commitSha}`);
+    
+    const analysis = {
+      message: commitDetails.commit.message,
+      author: commitDetails.commit.author.name,
+      date: commitDetails.commit.author.date,
+      filesChanged: commitDetails.files?.length || 0,
+      additions: commitDetails.stats?.additions || 0,
+      deletions: commitDetails.stats?.deletions || 0,
+      changes: [],
+      affectedAreas: new Set(),
+      changeTypes: {
+        newFiles: 0,
+        deletedFiles: 0,
+        modifiedFiles: 0
+      }
+    };
+    
+    // Analyze each file that changed
+    if (commitDetails.files) {
+      commitDetails.files.forEach(file => {
+        const filename = file.filename;
+        const status = file.status; // 'added', 'removed', 'modified'
+        
+        // Track change type
+        if (status === 'added') analysis.changeTypes.newFiles++;
+        else if (status === 'removed') analysis.changeTypes.deletedFiles++;
+        else analysis.changeTypes.modifiedFiles++;
+        
+        // Determine what area of codebase was affected
+        const pathParts = filename.split('/');
+        
+        // Get directory/module
+        if (pathParts.length > 1) {
+          const area = pathParts[0];
+          if (area !== '.' && area.length > 0) {
+            analysis.affectedAreas.add(area);
+          }
+        }
+        
+        // Categorize by file type
+        const ext = filename.split('.').pop();
+        let fileType = 'code';
+        
+        if (['md', 'txt', 'rst'].includes(ext)) fileType = 'documentation';
+        else if (['yml', 'yaml', 'json', 'toml', 'xml', 'ini', 'cfg'].includes(ext)) fileType = 'configuration';
+        else if (['test', 'spec'].some(t => filename.includes(t))) fileType = 'tests';
+        else if (['py', 'js', 'ts', 'java', 'cpp', 'c', 'go', 'rs', 'rb'].includes(ext)) fileType = 'source code';
+        
+        analysis.changes.push({
+          filename,
+          status,
+          additions: file.additions,
+          deletions: file.deletions,
+          fileType
+        });
+      });
+    }
+    
+    analysis.affectedAreas = Array.from(analysis.affectedAreas);
+    
+    // Generate human-readable description
+    let description = '';
+    
+    // Scale of change
+    const totalChanges = analysis.additions + analysis.deletions;
+    if (totalChanges > 500) {
+      description = 'Major update';
+    } else if (totalChanges > 100) {
+      description = 'Significant changes';
+    } else if (totalChanges > 20) {
+      description = 'Moderate update';
+    } else {
+      description = 'Small tweak';
+    }
+    
+    // What changed
+    const { newFiles, deletedFiles, modifiedFiles } = analysis.changeTypes;
+    const changeParts = [];
+    
+    if (newFiles > 0) changeParts.push(`${newFiles} new ${newFiles === 1 ? 'file' : 'files'}`);
+    if (deletedFiles > 0) changeParts.push(`${deletedFiles} ${deletedFiles === 1 ? 'file' : 'files'} removed`);
+    if (modifiedFiles > 0) changeParts.push(`${modifiedFiles} ${modifiedFiles === 1 ? 'file' : 'files'} modified`);
+    
+    if (changeParts.length > 0) {
+      description += ` (${changeParts.join(', ')})`;
+    }
+    
+    // Where
+    if (analysis.affectedAreas.length > 0) {
+      if (analysis.affectedAreas.length === 1) {
+        description += ` in ${analysis.affectedAreas[0]}`;
+      } else if (analysis.affectedAreas.length <= 3) {
+        description += ` across ${analysis.affectedAreas.join(', ')}`;
+      } else {
+        description += ` across ${analysis.affectedAreas.length} modules`;
+      }
+    }
+    
+    // Type breakdown
+    const fileTypes = {};
+    analysis.changes.forEach(change => {
+      fileTypes[change.fileType] = (fileTypes[change.fileType] || 0) + 1;
+    });
+    
+    const typeDescriptions = [];
+    if (fileTypes['source code']) typeDescriptions.push('code');
+    if (fileTypes['tests']) typeDescriptions.push('tests');
+    if (fileTypes['documentation']) typeDescriptions.push('docs');
+    if (fileTypes['configuration']) typeDescriptions.push('config');
+    
+    if (typeDescriptions.length > 0) {
+      description += `. Touched ${typeDescriptions.join(', ')}.`;
+    }
+    
+    analysis.humanDescription = description;
+    
+    return analysis;
+  } catch (error) {
+    console.error('Error analyzing recent commit:', error);
+    return null;
+  }
+}
+
 async function detectCICDTools(owner, repo) {
   const tools = {
     cicd: [],
@@ -473,6 +611,9 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Detect CI/CD and tooling
   const cicdTools = await detectCICDTools(owner, repo);
   
+  // Analyze the most recent commit on primary branch
+  const recentCommitAnalysis = await analyzeMostRecentCommit(owner, repo, primaryBranch);
+  
   // Analyze PR activity for recent work context
   const prInsights = analyzePRActivity(mergedPRsInRange);
   
@@ -482,6 +623,24 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '').replace('all time', 'historically');
   const commitCount = allCommits.length;
   const devCount = contributors.size;
+  
+  // Most recent change context
+  if (recentCommitAnalysis) {
+    const timeSince = Math.floor((new Date() - new Date(recentCommitAnalysis.date)) / (1000 * 60));
+    let timeAgo = '';
+    
+    if (timeSince < 60) {
+      timeAgo = `${timeSince} ${timeSince === 1 ? 'minute' : 'minutes'} ago`;
+    } else if (timeSince < 1440) {
+      const hours = Math.floor(timeSince / 60);
+      timeAgo = `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+    } else {
+      const days = Math.floor(timeSince / 1440);
+      timeAgo = `${days} ${days === 1 ? 'day' : 'days'} ago`;
+    }
+    
+    summary = `Latest: ${recentCommitAnalysis.humanDescription} (${timeAgo}). `;
+  }
   
   // Start with activity level in plain English
   if (commitCount === 0) {
@@ -549,7 +708,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     graph: graphNodes,
     branchingAnalysis,
     activitySummary: fullSummary,
-    cicdTools
+    cicdTools,
+    recentCommitAnalysis
   };
 }
 
