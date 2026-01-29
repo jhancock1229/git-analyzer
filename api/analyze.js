@@ -293,16 +293,10 @@ function generateActivitySummary(data) {
       parts.push(`What's new: ${changeAnalysis.capabilities.join('; ')}.`);
     }
     
-    // Focus areas with context
+    // Focus areas (simple list - context analysis disabled for performance)
     if (changeAnalysis.keywords.length > 0) {
-      const contextualAreas = analyzeKeywordContext(changeAnalysis.keywords, data.commitMessages);
-      if (contextualAreas.length > 0) {
-        parts.push(`Work focused on: ${contextualAreas.join('; ')}.`);
-      } else {
-        // Fallback to simple list
-        const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
-        parts.push(`Primary focus areas: ${focusAreas}.`);
-      }
+      const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
+      parts.push(`Primary focus areas: ${focusAreas}.`);
     }
     
     // Notable impacts
