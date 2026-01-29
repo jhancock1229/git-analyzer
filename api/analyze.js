@@ -49,6 +49,77 @@ function getTimeRangeLabel(timeRange) {
   return labels[timeRange] || 'Last Week';
 }
 
+function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch) {
+  const analysis = {
+    patterns: [],
+    strategy: 'Unknown',
+    strategyExplanation: '',
+    insights: [],
+    workflow: 'Unknown',
+    workflowExplanation: '',
+    detectionCriteria: [],
+    branchCounts: {}
+  };
+  
+  const featureBranches = branches.filter(b => b.name.includes('feature'));
+  const bugfixBranches = branches.filter(b => b.name.includes('fix'));
+  const developBranches = branches.filter(b => b.name.includes('develop') || b.name.includes('dev'));
+  const hotfixBranches = branches.filter(b => b.name.includes('hotfix'));
+  const releaseBranches = branches.filter(b => b.name.includes('release'));
+  
+  analysis.branchCounts = {
+    feature: featureBranches.length,
+    bugfix: bugfixBranches.length,
+    develop: developBranches.length,
+    hotfix: hotfixBranches.length,
+    release: releaseBranches.length,
+    total: branches.length
+  };
+  
+  const totalCommits = graphNodes.length;
+  const mergeCommits = graphNodes.filter(n => n.isMerge).length;
+  const mergeRatio = totalCommits > 0 ? (mergeCommits / totalCommits * 100).toFixed(1) : 0;
+  const prCount = mergedPRs.length;
+  const prRatio = totalCommits > 0 ? (prCount / totalCommits * 100).toFixed(1) : 0;
+  const { feature, bugfix, develop, hotfix, release, total } = analysis.branchCounts;
+  
+  if (prCount > 10 || prRatio > 10) {
+    analysis.workflow = 'Fork + Pull Request';
+    analysis.workflowExplanation = 'Contributors fork the repository and submit pull requests.';
+    analysis.detectionCriteria = [`${prCount} merged PRs`, `${prRatio}% PR merge ratio`];
+  } else if (total <= 3) {
+    analysis.workflow = 'Trunk-Based Development';
+    analysis.workflowExplanation = 'Few branches with most work on main.';
+    analysis.detectionCriteria = [`Only ${total} branches`];
+  } else {
+    analysis.workflow = 'Branch-based Development';
+    analysis.workflowExplanation = 'Multiple branches with feature workflow.';
+    analysis.detectionCriteria = [`${total} active branches`];
+  }
+  
+  if (develop > 0 && (feature > 0 || release > 0)) {
+    analysis.strategy = 'Git Flow';
+    analysis.strategyExplanation = 'Structured branching with main, develop, and feature/release branches.';
+  } else if (feature > 3) {
+    analysis.strategy = 'GitHub Flow';
+    analysis.strategyExplanation = 'Simple workflow with main as production-ready and feature branches.';
+  } else if (total <= 3) {
+    analysis.strategy = 'Trunk-Based Development';
+    analysis.strategyExplanation = 'Minimal branching with quick merges.';
+  } else {
+    analysis.strategy = 'Custom Strategy';
+    analysis.strategyExplanation = 'Unique branching pattern.';
+  }
+  
+  if (feature > 0) analysis.patterns.push({ type: 'Feature Branches', count: feature });
+  if (bugfix > 0) analysis.patterns.push({ type: 'Bugfix Branches', count: bugfix });
+  if (hotfix > 0) analysis.patterns.push({ type: 'Hotfix Branches', count: hotfix });
+  if (develop > 0) analysis.patterns.push({ type: 'Development Branches', count: develop });
+  if (release > 0) analysis.patterns.push({ type: 'Release Branches', count: release });
+  
+  return analysis;
+}
+
 async function analyzeGitHubRepo(owner, repo, timeRange) {
   const sinceDate = getTimeRangeDate(timeRange);
   
@@ -150,27 +221,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const merges = allCommits.filter(c => c.parents && c.parents.length > 1).slice(0, 10)
     .map(c => ({ author: c.commit.author.name, branchName: 'merged', time: new Date(c.commit.author.date).toLocaleString() }));
   
-  // Branching strategy detection
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   
-  // Detailed summary with change analysis
-  const commitMessages = graphNodes.map(node => node.subject);
-  const topContributors = Array.from(contributors.values()).sort((a, b) => b.commits - a.commits).slice(0, 5);
-  
-  const summary = generateActivitySummary({
-    repoDescription: repoInfo.description || '',
-    repoName: `${owner}/${repo}`,
-    timeRange: getTimeRangeLabel(timeRange),
-    totalCommits: allCommits.length,
-    contributorCount: contributors.size,
-    topContributors,
-    commitMessages,
-    activeBranches: activeBranches.length,
-    staleBranches: staleBranches.length,
-    mergeCount: merges.length,
-    branchingStrategy: branchingAnalysis.strategy,
-    workflow: branchingAnalysis.workflow
-  });
+  // Simple but informative summary
+  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing. The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
@@ -188,334 +242,6 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     branchingAnalysis,
     activitySummary: summary
   };
-}
-
-function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch) {
-  const analysis = {
-    patterns: [],
-    strategy: 'Unknown',
-    strategyExplanation: '',
-    insights: [],
-    workflow: 'Unknown',
-    workflowExplanation: '',
-    detectionCriteria: [],
-    branchCounts: {}
-  };
-  
-  const featureBranches = branches.filter(b => b.name.includes('feature'));
-  const bugfixBranches = branches.filter(b => b.name.includes('fix'));
-  const developBranches = branches.filter(b => b.name.includes('develop') || b.name.includes('dev'));
-  const hotfixBranches = branches.filter(b => b.name.includes('hotfix'));
-  const releaseBranches = branches.filter(b => b.name.includes('release'));
-  
-  analysis.branchCounts = {
-    feature: featureBranches.length,
-    bugfix: bugfixBranches.length,
-    develop: developBranches.length,
-    hotfix: hotfixBranches.length,
-    release: releaseBranches.length,
-    total: branches.length
-  };
-  
-  const totalCommits = graphNodes.length;
-  const mergeCommits = graphNodes.filter(n => n.isMerge).length;
-  const mergeRatio = totalCommits > 0 ? (mergeCommits / totalCommits * 100).toFixed(1) : 0;
-  const prCount = mergedPRs.length;
-  const prRatio = totalCommits > 0 ? (prCount / totalCommits * 100).toFixed(1) : 0;
-  const { feature, bugfix, develop, hotfix, release, total } = analysis.branchCounts;
-  
-  if (prCount > 10 || prRatio > 10) {
-    analysis.workflow = 'Fork + Pull Request';
-    analysis.workflowExplanation = 'Contributors fork the repository and submit pull requests.';
-    analysis.detectionCriteria = [`${prCount} merged PRs`, `${prRatio}% PR merge ratio`];
-  } else if (total <= 3) {
-    analysis.workflow = 'Trunk-Based Development';
-    analysis.workflowExplanation = 'Few branches with most work on main.';
-    analysis.detectionCriteria = [`Only ${total} branches`];
-  } else {
-    analysis.workflow = 'Branch-based Development';
-    analysis.workflowExplanation = 'Multiple branches with feature workflow.';
-    analysis.detectionCriteria = [`${total} active branches`];
-  }
-  
-  if (develop > 0 && (feature > 0 || release > 0)) {
-    analysis.strategy = 'Git Flow';
-    analysis.strategyExplanation = 'Structured branching with main, develop, and feature/release branches.';
-  } else if (feature > 3) {
-    analysis.strategy = 'GitHub Flow';
-    analysis.strategyExplanation = 'Simple workflow with main as production-ready and feature branches.';
-  } else if (total <= 3) {
-    analysis.strategy = 'Trunk-Based Development';
-    analysis.strategyExplanation = 'Minimal branching with quick merges.';
-  } else {
-    analysis.strategy = 'Custom Strategy';
-    analysis.strategyExplanation = 'Unique branching pattern.';
-  }
-  
-  if (feature > 0) analysis.patterns.push({ type: 'Feature Branches', count: feature });
-  if (bugfix > 0) analysis.patterns.push({ type: 'Bugfix Branches', count: bugfix });
-  if (hotfix > 0) analysis.patterns.push({ type: 'Hotfix Branches', count: hotfix });
-  if (develop > 0) analysis.patterns.push({ type: 'Development Branches', count: develop });
-  if (release > 0) analysis.patterns.push({ type: 'Release Branches', count: release });
-  
-  return analysis;
-}
-
-function generateActivitySummary(data) {
-  const parts = [];
-  
-  // Repo description
-  if (data.repoDescription && data.repoDescription.length > 10) {
-    parts.push(`${data.repoName}: ${data.repoDescription}`);
-  } else {
-    parts.push(`${data.repoName}`);
-  }
-  
-  // Activity level
-  parts.push(`Over ${data.timeRange.toLowerCase()}, the team made ${data.totalCommits} updates with ${data.contributorCount} ${data.contributorCount === 1 ? 'developer' : 'developers'} contributing.`);
-  
-  // Analyze changes
-  if (data.commitMessages && data.commitMessages.length > 0) {
-    const changeAnalysis = analyzeChanges(data.commitMessages);
-    
-    // Deliverables
-    const deliverables = [];
-    if (changeAnalysis.features > 0) deliverables.push(`${changeAnalysis.features} new features delivered`);
-    if (changeAnalysis.improvements > 0) deliverables.push(`${changeAnalysis.improvements} enhancements`);
-    if (changeAnalysis.bugfixes > 0) deliverables.push(`${changeAnalysis.bugfixes} issues resolved`);
-    
-    if (deliverables.length > 0) {
-      parts.push(`Key deliverables: ${deliverables.join(', ')}.`);
-    }
-    
-    // What's new - actual functional improvements
-    if (changeAnalysis.capabilities && changeAnalysis.capabilities.length > 0) {
-      parts.push(`What's new: ${changeAnalysis.capabilities.join('; ')}.`);
-    }
-    
-    // Focus areas (simple list - context analysis disabled for performance)
-    if (changeAnalysis.keywords.length > 0) {
-      const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
-      parts.push(`Primary focus areas: ${focusAreas}.`);
-    }
-    
-    // Notable impacts
-    const impacts = [];
-    if (changeAnalysis.performance > 0) impacts.push(`performance improvements (${changeAnalysis.performance})`);
-    if (changeAnalysis.security > 0) impacts.push(`security enhancements (${changeAnalysis.security})`);
-    if (changeAnalysis.breaking > 0) impacts.push(`⚠️ breaking changes (${changeAnalysis.breaking})`);
-    
-    if (impacts.length > 0) {
-      parts.push(`Notable impacts: ${impacts.join(', ')}.`);
-    }
-    
-    // Quality indicators
-    if (changeAnalysis.tests > data.totalCommits * 0.2) {
-      parts.push(`Strong testing focus with ${Math.round((changeAnalysis.tests / data.totalCommits) * 100)}% of work including tests.`);
-    }
-  }
-  
-  // Top contributors
-  if (data.topContributors.length > 0) {
-    const topNames = data.topContributors.slice(0, 3).map(c => c.name).join(', ');
-    parts.push(`Top contributors: ${topNames}.`);
-  }
-  
-  // Collaboration
-  if (data.mergeCount > 5) {
-    parts.push(`Strong collaboration with ${data.mergeCount} code reviews and merges.`);
-  }
-  
-  // Stale branches warning
-  if (data.staleBranches > 5) {
-    parts.push(`⚠️ ${data.staleBranches} inactive branches should be reviewed for cleanup.`);
-  }
-  
-  // Workflow
-  parts.push(`The team follows ${data.branchingStrategy} with ${data.workflow.toLowerCase()}.`);
-  
-  return parts.join(' ');
-}
-
-function analyzeKeywordContext(keywords, commitMessages) {
-  // Simplified - just determine action for each keyword
-  const contextualAreas = [];
-  
-  keywords.slice(0, 5).forEach(keyword => {
-    // Count how many commits mention this keyword with each action
-    let added = 0, fixed = 0, improved = 0, updated = 0;
-    
-    for (const msg of commitMessages) {
-      const lower = msg.toLowerCase();
-      if (!lower.includes(keyword.toLowerCase())) continue;
-      
-      if (/\b(add|added|implement|new)\b/i.test(msg)) added++;
-      else if (/\b(fix|fixed|resolve|bug)\b/i.test(msg)) fixed++;
-      else if (/\b(improve|improved|enhance|optimize)\b/i.test(msg)) improved++;
-      else if (/\b(update|updated|refactor)\b/i.test(msg)) updated++;
-    }
-    
-    const total = added + fixed + improved + updated;
-    if (total === 0) return;
-    
-    // Pick the most common action
-    let action = '';
-    let count = 0;
-    
-    if (added >= fixed && added >= improved && added >= updated) {
-      action = 'added';
-      count = added;
-    } else if (fixed >= improved && fixed >= updated) {
-      action = 'fixed';
-      count = fixed;
-    } else if (improved >= updated) {
-      action = 'improved';
-      count = improved;
-    } else {
-      action = 'updated';
-      count = updated;
-    }
-    
-    const keywordDisplay = keyword.charAt(0).toUpperCase() + keyword.slice(1);
-    
-    if (count > 2) {
-      contextualAreas.push(`${keywordDisplay} ${action} (${count} changes)`);
-    } else {
-      contextualAreas.push(`${keywordDisplay} ${action}`);
-    }
-  });
-  
-  return contextualAreas;
-}
-
-function analyzeChanges(commitMessages) {
-  const analysis = {
-    keywords: [],
-    features: 0,
-    bugfixes: 0,
-    improvements: 0,
-    tests: 0,
-    docs: 0,
-    performance: 0,
-    security: 0,
-    breaking: 0,
-    capabilities: [] // Track what's new
-  };
-  
-  const stopWords = new Set([
-    'add', 'added', 'adds', 'update', 'updated', 'updates', 'fix', 'fixed', 'fixes',
-    'remove', 'removed', 'removes', 'change', 'changed', 'changes', 'improve', 'improved',
-    'merge', 'merged', 'commit', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on',
-    'at', 'to', 'for', 'of', 'with', 'from', 'by', 'make', 'made', 'use', 'used'
-  ]);
-  
-  const wordFrequency = new Map();
-  const allCapabilities = [];
-  
-  commitMessages.forEach(msg => {
-    const lower = msg.toLowerCase();
-    
-    try {
-      // Count change types AND extract capabilities
-      if (/\b(feat|feature|add|new|implement)\b/i.test(msg)) {
-        analysis.features++;
-        const caps = extractCapability(msg);
-        allCapabilities.push(...caps);
-      }
-      if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
-        analysis.bugfixes++;
-        const caps = extractCapability(msg);
-        allCapabilities.push(...caps);
-      }
-      if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
-        analysis.improvements++;
-        const caps = extractCapability(msg);
-        allCapabilities.push(...caps);
-      }
-      if (/\b(test|spec|jest|mocha|unit)\b/i.test(msg)) analysis.tests++;
-      if (/\b(doc|docs|documentation|readme)\b/i.test(msg)) analysis.docs++;
-      if (/\b(performance|perf|speed|faster)\b/i.test(msg)) analysis.performance++;
-      if (/\b(security|vulnerability|cve|auth)\b/i.test(msg)) analysis.security++;
-      if (/\b(breaking|break)\b/i.test(msg)) analysis.breaking++;
-    } catch (e) {
-      // Skip if extraction fails
-    }
-    
-    // Extract keywords
-    const words = lower
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(word => word.length > 3 && !stopWords.has(word));
-    
-    words.forEach(word => {
-      wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
-    });
-  });
-  
-  // Get top keywords
-  analysis.keywords = Array.from(wordFrequency.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([word]) => word);
-  
-  // Deduplicate capabilities
-  const capabilityFreq = new Map();
-  allCapabilities.forEach(cap => {
-    const normalized = cap.toLowerCase().trim();
-    capabilityFreq.set(normalized, (capabilityFreq.get(normalized) || 0) + 1);
-  });
-  
-  analysis.capabilities = Array.from(capabilityFreq.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([text]) => text);
-  
-  return analysis;
-}
-
-function extractCapability(commitMsg) {
-  const capabilities = [];
-  const msg = commitMsg.trim();
-  
-  // Pattern 1: "Add X" or "Implement X"
-  if (/^(?:add|added|implement|implemented|introduce|introduced)/i.test(msg)) {
-    const match = msg.match(/^(?:add|added|implement|implemented|introduce|introduced)\s+(.+?)(?:\s+support|\s+feature|\s+functionality)?$/i);
-    if (match && match[1]) {
-      const feature = match[1].trim().replace(/^(the|a|an)\s+/i, '');
-      if (feature.length > 5 && feature.length < 60) {
-        capabilities.push(feature);
-      }
-    }
-  }
-  
-  // Pattern 2: "Fix X" - what now works
-  if (/^(?:fix|fixed|resolve|resolved)/i.test(msg)) {
-    const match = msg.match(/^(?:fix|fixed|resolve|resolved)\s+(.+?)$/i);
-    if (match && match[1]) {
-      const fix = match[1].trim().replace(/^(the|a|an)\s+/i, '').replace(/\s+(?:issue|bug|problem).*$/i, '');
-      if (fix.length > 5 && fix.length < 60) {
-        capabilities.push(`${fix} now works`);
-      }
-    }
-  }
-  
-  // Pattern 3: "Improve X" - what's better
-  if (/^(?:improve|improved|enhance|enhanced|optimize|optimized)/i.test(msg)) {
-    const match = msg.match(/^(?:improve|improved|enhance|enhanced|optimize|optimized)\s+(.+?)$/i);
-    if (match && match[1]) {
-      const improvement = match[1].trim().replace(/^(the|a|an)\s+/i, '');
-      if (improvement.length > 5 && improvement.length < 60) {
-        capabilities.push(`better ${improvement}`);
-      }
-    }
-  }
-  
-  return capabilities.filter(cap => 
-    cap.length > 8 && 
-    cap.length < 80 &&
-    !cap.match(/^\d+$/) &&
-    !cap.includes('http')
-  );
 }
 
 export default async function handler(req, res) {
