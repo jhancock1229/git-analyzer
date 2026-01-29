@@ -419,10 +419,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   // Create merge list from merged PRs (more accurate than merge commits)
   const merges = mergedPRsInRange.slice(0, 10).map(pr => ({
-    author: pr.user.login,
-    branchName: pr.head.ref,
+    author: pr.user?.login || 'Unknown',
+    branchName: pr.head?.ref || 'unknown',
     time: new Date(pr.merged_at).toLocaleString(),
-    title: pr.title,
+    title: pr.title || 'Merged PR',
     number: pr.number,
     url: pr.html_url
   }));
