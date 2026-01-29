@@ -83,36 +83,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   console.log(`✓ Found ${branches.length} total branches`);
   
-  // Filter to "active" branches (those with commits in the time range)
-  // and identify "stale" branches (no commits in last 90 days)
+  // We'll identify stale branches AFTER fetching commits (more efficient)
   const activeBranches = [];
   const staleBranches = [];
   const branchCommitCounts = new Map();
-  const staleThreshold = new Date();
-  staleThreshold.setDate(staleThreshold.getDate() - 90); // 90 days ago
-  
-  // Check each branch for activity
-  for (const branch of branches) {
-    try {
-      // Get the latest commit on this branch
-      const branchCommit = await githubRequest(
-        `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${branch.commit.sha}`
-      );
-      
-      const lastCommitDate = new Date(branchCommit.commit.author.date);
-      
-      if (lastCommitDate < staleThreshold) {
-        // Branch is stale (no activity in 90 days)
-        staleBranches.push({
-          ...branch,
-          lastCommit: branchCommit.commit.author.date,
-          daysSinceLastCommit: Math.floor((new Date() - lastCommitDate) / (1000 * 60 * 60 * 24))
-        });
-      }
-    } catch (error) {
-      // If we can't check, assume it's not stale
-    }
-  }
+  const branchLastSeen = new Map(); // Track last commit date per branch
   
   // Get commits from ALL branches (not just primary)
   let allCommits = [];
@@ -149,6 +124,12 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
             commitMap.set(commit.sha, { commit, branches: [branch.name] });
             // Track that this branch has commits in the time range
             branchCommitCounts.set(branch.name, (branchCommitCounts.get(branch.name) || 0) + 1);
+            
+            // Track the latest commit date for this branch
+            const commitDate = new Date(commit.commit.author.date);
+            if (!branchLastSeen.has(branch.name) || commitDate > branchLastSeen.get(branch.name)) {
+              branchLastSeen.set(branch.name, commitDate);
+            }
           } else {
             // Commit exists in multiple branches
             commitMap.get(commit.sha).branches.push(branch.name);
@@ -181,6 +162,28 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     const dateB = new Date(b.commit.author.date);
     return dateB - dateA;
   });
+  
+  // Now determine stale branches based on commit activity we already fetched
+  const staleThreshold = new Date();
+  staleThreshold.setDate(staleThreshold.getDate() - 90);
+  
+  for (const branch of branches) {
+    const lastSeen = branchLastSeen.get(branch.name);
+    const isActive = activeBranches.find(b => b.name === branch.name);
+    
+    // If we haven't seen this branch in commits OR last seen > 90 days ago
+    if (!isActive || (lastSeen && lastSeen < staleThreshold)) {
+      const daysSince = lastSeen 
+        ? Math.floor((new Date() - lastSeen) / (1000 * 60 * 60 * 24))
+        : 999; // Unknown, assume very old
+        
+      staleBranches.push({
+        ...branch,
+        lastCommit: lastSeen ? lastSeen.toISOString() : 'Unknown',
+        daysSinceLastCommit: daysSince
+      });
+    }
+  }
   
   console.log(`✓ Total commits: ${allCommits.length}`);
   
