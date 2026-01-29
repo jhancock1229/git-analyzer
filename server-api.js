@@ -421,97 +421,116 @@ function generateActivitySummary(data) {
     parts.push(repoSummary);
   }
   
-  // Opening
-  parts.push(`Over ${data.timeRange.toLowerCase()}, this repository had ${data.totalCommits} commits from ${data.contributorCount} ${data.contributorCount === 1 ? 'contributor' : 'contributors'}.`);
+  // Executive summary - activity level
+  parts.push(`Over ${data.timeRange.toLowerCase()}, the team made ${data.totalCommits} updates with ${data.contributorCount} ${data.contributorCount === 1 ? 'developer' : 'developers'} contributing.`);
   
-  // Top contributors
-  if (data.topContributors.length > 0) {
-    const topNames = data.topContributors.slice(0, 3).map(c => `${c.name} (${c.commits})`).join(', ');
-    parts.push(`Most active contributors: ${topNames}.`);
-  }
-  
-  // Detailed change analysis
+  // Key deliverables - what got shipped
   if (data.commitMessages && data.commitMessages.length > 0) {
     const changeAnalysis = analyzeChanges(data.commitMessages);
     
-    // Primary work areas
-    if (changeAnalysis.keywords.length > 0) {
-      parts.push(`Primary work areas: ${changeAnalysis.keywords.slice(0, 5).join(', ')}.`);
-    }
-    
-    // Change types with impact
-    const changeTypes = [];
+    // Focus on user-facing features and improvements
+    const deliverables = [];
     if (changeAnalysis.features > 0) {
-      changeTypes.push(`${changeAnalysis.features} new features added`);
-    }
-    if (changeAnalysis.bugfixes > 0) {
-      changeTypes.push(`${changeAnalysis.bugfixes} bugs fixed`);
+      deliverables.push(`${changeAnalysis.features} new features delivered`);
     }
     if (changeAnalysis.improvements > 0) {
-      changeTypes.push(`${changeAnalysis.improvements} improvements made`);
+      deliverables.push(`${changeAnalysis.improvements} enhancements to existing functionality`);
     }
-    if (changeAnalysis.refactors > 0) {
-      changeTypes.push(`${changeAnalysis.refactors} refactorings`);
-    }
-    if (changeAnalysis.tests > 0) {
-      changeTypes.push(`${changeAnalysis.tests} test updates`);
-    }
-    if (changeAnalysis.docs > 0) {
-      changeTypes.push(`${changeAnalysis.docs} documentation updates`);
+    if (changeAnalysis.bugfixes > 0) {
+      deliverables.push(`${changeAnalysis.bugfixes} issues resolved`);
     }
     
-    if (changeTypes.length > 0) {
-      parts.push(`Changes include: ${changeTypes.join(', ')}.`);
+    if (deliverables.length > 0) {
+      parts.push(`Key deliverables: ${deliverables.join(', ')}.`);
     }
     
-    // Impact assessment
+    // What's new - actual functional improvements
+    if (changeAnalysis.capabilities && changeAnalysis.capabilities.length > 0) {
+      const newCapabilities = changeAnalysis.capabilities
+        .filter(cap => cap.text.length > 8)
+        .slice(0, 5)
+        .map(cap => cap.text);
+      
+      if (newCapabilities.length > 0) {
+        parts.push(`What's new: ${newCapabilities.join('; ')}.`);
+      }
+    }
+    
+    // What areas improved - business-focused language
+    if (changeAnalysis.keywords.length > 0) {
+      const focusAreas = changeAnalysis.keywords
+        .slice(0, 5)
+        .map(word => {
+          // Translate technical terms to business terms where possible
+          if (word === 'test' || word === 'tests' || word === 'testing') return 'quality assurance';
+          if (word === 'perf' || word === 'performance') return 'performance';
+          if (word === 'auth' || word === 'authentication') return 'security & login';
+          if (word === 'api') return 'backend services';
+          if (word === 'ui' || word === 'frontend') return 'user interface';
+          if (word === 'docs' || word === 'documentation') return 'documentation';
+          return word;
+        });
+      parts.push(`Primary focus areas: ${focusAreas.join(', ')}.`);
+    }
+    
+    // Important impacts that managers care about
     const impacts = [];
     if (changeAnalysis.performance > 0) {
-      impacts.push(`performance optimizations (${changeAnalysis.performance})`);
+      impacts.push(`improved application speed and responsiveness (${changeAnalysis.performance} optimizations)`);
     }
     if (changeAnalysis.security > 0) {
-      impacts.push(`security enhancements (${changeAnalysis.security})`);
+      impacts.push(`strengthened security (${changeAnalysis.security} enhancements)`);
     }
     if (changeAnalysis.breaking > 0) {
-      impacts.push(`⚠️ breaking changes (${changeAnalysis.breaking})`);
-    }
-    if (changeAnalysis.deprecations > 0) {
-      impacts.push(`deprecations (${changeAnalysis.deprecations})`);
+      impacts.push(`⚠️ made ${changeAnalysis.breaking} breaking ${changeAnalysis.breaking === 1 ? 'change' : 'changes'} that may require user communication`);
     }
     
     if (impacts.length > 0) {
-      parts.push(`Notable impacts: ${impacts.join(', ')}.`);
+      parts.push(`Notable achievements: ${impacts.join(', ')}.`);
     }
     
-    // Quality indicators
+    // Quality and stability indicators
+    const qualityMetrics = [];
     if (changeAnalysis.tests > data.totalCommits * 0.2) {
-      parts.push(`Strong testing focus with ${Math.round((changeAnalysis.tests / data.totalCommits) * 100)}% of commits including tests.`);
+      qualityMetrics.push(`strong focus on quality with ${Math.round((changeAnalysis.tests / data.totalCommits) * 100)}% of work including testing`);
     }
     if (changeAnalysis.bugfixes > data.totalCommits * 0.3) {
-      parts.push(`High bug-fixing activity suggests stabilization phase.`);
+      qualityMetrics.push(`emphasis on stability and bug fixes suggests product maturation`);
     }
     if (changeAnalysis.features > data.totalCommits * 0.3) {
-      parts.push(`Heavy feature development indicates active growth phase.`);
+      qualityMetrics.push(`heavy new feature development indicates growth phase`);
+    }
+    if (changeAnalysis.docs > data.totalCommits * 0.15) {
+      qualityMetrics.push(`good documentation practices with ${changeAnalysis.docs} documentation updates`);
+    }
+    
+    if (qualityMetrics.length > 0) {
+      parts.push(`Quality indicators: ${qualityMetrics.join(', ')}.`);
     }
   }
   
-  // Branch activity
-  if (data.activeBranches > 1) {
-    parts.push(`Development occurred across ${data.activeBranches} active branches.`);
+  // Team collaboration
+  if (data.topContributors.length > 0) {
+    const topNames = data.topContributors.slice(0, 3).map(c => c.name).join(', ');
+    parts.push(`Top contributors: ${topNames}.`);
   }
   
-  // Stale branches warning
-  if (data.staleBranches > 0) {
-    parts.push(`⚠️ ${data.staleBranches} stale ${data.staleBranches === 1 ? 'branch' : 'branches'} detected (no activity in 90+ days) - consider cleanup.`);
+  if (data.mergeCount > 5) {
+    parts.push(`The team showed strong collaboration with ${data.mergeCount} code reviews and merges.`);
   }
   
-  // Merges
-  if (data.mergeCount > 0) {
-    parts.push(`${data.mergeCount} merge commits indicate active collaboration.`);
+  // Branch management - simplified
+  if (data.activeBranches > 3) {
+    parts.push(`Work was distributed across ${data.activeBranches} parallel development tracks.`);
   }
   
-  // Strategy
-  parts.push(`The team is using ${data.branchingStrategy} with a ${data.workflow} workflow.`);
+  // Technical debt warning
+  if (data.staleBranches > 5) {
+    parts.push(`⚠️ Housekeeping needed: ${data.staleBranches} inactive branches should be reviewed for cleanup.`);
+  }
+  
+  // Workflow summary
+  parts.push(`The team follows ${data.branchingStrategy} methodology with ${data.workflow.toLowerCase()} collaboration.`);
   
   return parts.join(' ');
 }
@@ -528,7 +547,8 @@ function analyzeChanges(commitMessages) {
     performance: 0,
     security: 0,
     breaking: 0,
-    deprecations: 0
+    deprecations: 0,
+    capabilities: [] // New: what can the app do now?
   };
   
   const stopWords = new Set([
@@ -543,19 +563,26 @@ function analyzeChanges(commitMessages) {
   ]);
   
   const wordFrequency = new Map();
+  const allCapabilities = []; // Collect all capability statements
   
   commitMessages.forEach(msg => {
     const lower = msg.toLowerCase();
     
-    // Count change types
+    // Count change types AND extract capabilities
     if (/\b(feat|feature|add|new|implement|introduce)\b/i.test(msg)) {
       analysis.features++;
+      const caps = extractCapability(msg, 'added');
+      allCapabilities.push(...caps);
     }
     if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
       analysis.bugfixes++;
+      const caps = extractCapability(msg, 'fixed');
+      allCapabilities.push(...caps);
     }
     if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
       analysis.improvements++;
+      const caps = extractCapability(msg, 'improved');
+      allCapabilities.push(...caps);
     }
     if (/\b(refactor|restructure|reorganize|cleanup|clean up)\b/i.test(msg)) {
       analysis.refactors++;
@@ -594,7 +621,84 @@ function analyzeChanges(commitMessages) {
     .slice(0, 10)
     .map(([word]) => word);
   
+  // Deduplicate and rank capabilities by frequency
+  const capabilityFreq = new Map();
+  allCapabilities.forEach(cap => {
+    const normalized = cap.toLowerCase().trim();
+    capabilityFreq.set(normalized, (capabilityFreq.get(normalized) || 0) + 1);
+  });
+  
+  analysis.capabilities = Array.from(capabilityFreq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([text]) => ({ text }));
+  
   return analysis;
+}
+
+function extractCapability(commitMsg, actionType) {
+  // Extract meaningful capability statements from commit messages
+  const capabilities = [];
+  const msg = commitMsg.trim();
+  
+  // Pattern 1: "Add X support" or "Add X feature"
+  if (/^(?:add|added|implement|implemented|introduce|introduced)/i.test(msg)) {
+    const match = msg.match(/^(?:add|added|implement|implemented|introduce|introduced)\s+(.+?)(?:\s+support|\s+feature|\s+functionality)?(?:\s+for|\s+to)?(.*)$/i);
+    if (match && match[1]) {
+      const feature = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (feature.length > 5 && feature.length < 80) {
+        capabilities.push(feature);
+      }
+    }
+  }
+  
+  // Pattern 2: "Fix X" - describe what now works
+  if (/^(?:fix|fixed|resolve|resolved)/i.test(msg)) {
+    const match = msg.match(/^(?:fix|fixed|resolve|resolved)\s+(.+?)(?:\s+issue|\s+bug|\s+problem)?$/i);
+    if (match && match[1]) {
+      const fix = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (fix.length > 5 && fix.length < 80) {
+        capabilities.push(`${fix} now works correctly`);
+      }
+    }
+  }
+  
+  // Pattern 3: "Improve X" - what's better
+  if (/^(?:improve|improved|enhance|enhanced|optimize|optimized)/i.test(msg)) {
+    const match = msg.match(/^(?:improve|improved|enhance|enhanced|optimize|optimized)\s+(.+?)$/i);
+    if (match && match[1]) {
+      const improvement = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (improvement.length > 5 && improvement.length < 80) {
+        capabilities.push(`better ${improvement}`);
+      }
+    }
+  }
+  
+  // Pattern 4: "Enable X" or "Allow X"
+  if (/(?:enable|enabled|allow|allowed|support)\s+/i.test(msg)) {
+    const match = msg.match(/(?:enable|enabled|allow|allowed|support)\s+(.+?)(?:\s+to)?$/i);
+    if (match && match[1]) {
+      const enabled = match[1].trim().replace(/^(the|a|an)\s+/i, '');
+      if (enabled.length > 5 && enabled.length < 80 && !enabled.includes('user')) {
+        capabilities.push(enabled);
+      }
+    }
+  }
+  
+  // Pattern 5: "Users can now X"
+  if (/users?\s+can\s+now/i.test(msg)) {
+    const match = msg.match(/users?\s+can\s+now\s+(.+?)$/i);
+    if (match && match[1]) {
+      capabilities.push(match[1].trim());
+    }
+  }
+  
+  return capabilities.filter(cap => 
+    cap.length > 8 && 
+    cap.length < 100 &&
+    !cap.match(/^\d+$/) && // No pure numbers
+    !cap.includes('http') // No URLs
+  );
 }
 
 function getTimeRangeLabel(timeRange) {
