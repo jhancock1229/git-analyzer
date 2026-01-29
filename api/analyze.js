@@ -416,11 +416,68 @@ function generateActivitySummary(data) {
     parts.push(`Most active contributors: ${topNames}.`);
   }
   
-  // Commit message summary
+  // Detailed change analysis
   if (data.commitMessages && data.commitMessages.length > 0) {
-    const keywords = extractKeywords(data.commitMessages);
-    if (keywords.length > 0) {
-      parts.push(`Key areas of work: ${keywords.slice(0, 5).join(', ')}.`);
+    const changeAnalysis = analyzeChanges(data.commitMessages);
+    
+    // Primary work areas
+    if (changeAnalysis.keywords.length > 0) {
+      parts.push(`Primary work areas: ${changeAnalysis.keywords.slice(0, 5).join(', ')}.`);
+    }
+    
+    // Change types with impact
+    const changeTypes = [];
+    if (changeAnalysis.features > 0) {
+      changeTypes.push(`${changeAnalysis.features} new features added`);
+    }
+    if (changeAnalysis.bugfixes > 0) {
+      changeTypes.push(`${changeAnalysis.bugfixes} bugs fixed`);
+    }
+    if (changeAnalysis.improvements > 0) {
+      changeTypes.push(`${changeAnalysis.improvements} improvements made`);
+    }
+    if (changeAnalysis.refactors > 0) {
+      changeTypes.push(`${changeAnalysis.refactors} refactorings`);
+    }
+    if (changeAnalysis.tests > 0) {
+      changeTypes.push(`${changeAnalysis.tests} test updates`);
+    }
+    if (changeAnalysis.docs > 0) {
+      changeTypes.push(`${changeAnalysis.docs} documentation updates`);
+    }
+    
+    if (changeTypes.length > 0) {
+      parts.push(`Changes include: ${changeTypes.join(', ')}.`);
+    }
+    
+    // Impact assessment
+    const impacts = [];
+    if (changeAnalysis.performance > 0) {
+      impacts.push(`performance optimizations (${changeAnalysis.performance})`);
+    }
+    if (changeAnalysis.security > 0) {
+      impacts.push(`security enhancements (${changeAnalysis.security})`);
+    }
+    if (changeAnalysis.breaking > 0) {
+      impacts.push(`⚠️ breaking changes (${changeAnalysis.breaking})`);
+    }
+    if (changeAnalysis.deprecations > 0) {
+      impacts.push(`deprecations (${changeAnalysis.deprecations})`);
+    }
+    
+    if (impacts.length > 0) {
+      parts.push(`Notable impacts: ${impacts.join(', ')}.`);
+    }
+    
+    // Quality indicators
+    if (changeAnalysis.tests > data.totalCommits * 0.2) {
+      parts.push(`Strong testing focus with ${Math.round((changeAnalysis.tests / data.totalCommits) * 100)}% of commits including tests.`);
+    }
+    if (changeAnalysis.bugfixes > data.totalCommits * 0.3) {
+      parts.push(`High bug-fixing activity suggests stabilization phase.`);
+    }
+    if (changeAnalysis.features > data.totalCommits * 0.3) {
+      parts.push(`Heavy feature development indicates active growth phase.`);
     }
   }
   
@@ -431,7 +488,7 @@ function generateActivitySummary(data) {
   
   // Stale branches warning
   if (data.staleBranches > 0) {
-    parts.push(`⚠️ ${data.staleBranches} stale ${data.staleBranches === 1 ? 'branch' : 'branches'} detected (no activity in 90+ days).`);
+    parts.push(`⚠️ ${data.staleBranches} stale ${data.staleBranches === 1 ? 'branch' : 'branches'} detected (no activity in 90+ days) - consider cleanup.`);
   }
   
   // Merges
@@ -445,7 +502,21 @@ function generateActivitySummary(data) {
   return parts.join(' ');
 }
 
-function extractKeywords(commitMessages) {
+function analyzeChanges(commitMessages) {
+  const analysis = {
+    keywords: [],
+    features: 0,
+    bugfixes: 0,
+    improvements: 0,
+    refactors: 0,
+    tests: 0,
+    docs: 0,
+    performance: 0,
+    security: 0,
+    breaking: 0,
+    deprecations: 0
+  };
+  
   const stopWords = new Set([
     'add', 'added', 'adds', 'update', 'updated', 'updates', 'fix', 'fixed', 'fixes',
     'remove', 'removed', 'removes', 'change', 'changed', 'changes', 'improve', 'improved',
@@ -453,13 +524,47 @@ function extractKeywords(commitMessages) {
     'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'from', 'by',
     'is', 'was', 'are', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do',
     'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can',
-    'this', 'that', 'these', 'those', 'some', 'all', 'any', 'more', 'most', 'other'
+    'this', 'that', 'these', 'those', 'some', 'all', 'any', 'more', 'most', 'other',
+    'make', 'made', 'use', 'used', 'get', 'set', 'new', 'old', 'first', 'last'
   ]);
   
   const wordFrequency = new Map();
   
   commitMessages.forEach(msg => {
-    const words = msg.toLowerCase()
+    const lower = msg.toLowerCase();
+    
+    // Count change types
+    if (/\b(feat|feature|add|new|implement|introduce)\b/i.test(msg)) {
+      analysis.features++;
+    }
+    if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
+      analysis.bugfixes++;
+    }
+    if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
+      analysis.improvements++;
+    }
+    if (/\b(refactor|restructure|reorganize|cleanup|clean up)\b/i.test(msg)) {
+      analysis.refactors++;
+    }
+    if (/\b(test|spec|jest|mocha|unit|integration)\b/i.test(msg)) {
+      analysis.tests++;
+    }
+    if (/\b(doc|docs|documentation|readme|comment)\b/i.test(msg)) {
+      analysis.docs++;
+    }
+    if (/\b(performance|perf|speed|faster|optimize|slow)\b/i.test(msg)) {
+      analysis.performance++;
+    }
+    if (/\b(security|vulnerability|cve|xss|sql injection|auth)\b/i.test(msg)) {
+      analysis.security++;
+    }
+    if (/\b(breaking|break|deprecated|deprecate)\b/i.test(msg)) {
+      if (/\bbreak/i.test(msg)) analysis.breaking++;
+      if (/\bdeprecate/i.test(msg)) analysis.deprecations++;
+    }
+    
+    // Extract keywords
+    const words = lower
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
       .filter(word => word.length > 3 && !stopWords.has(word));
@@ -469,16 +574,14 @@ function extractKeywords(commitMessages) {
     });
   });
   
-  return Array.from(wordFrequency.entries())
+  // Get top keywords
+  analysis.keywords = Array.from(wordFrequency.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([word]) => word);
+  
+  return analysis;
 }
-
-// Vercel serverless function handler
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
