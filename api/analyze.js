@@ -344,73 +344,50 @@ function generateActivitySummary(data) {
 }
 
 function analyzeKeywordContext(keywords, commitMessages) {
-  // For each keyword, find what action was taken with it
+  // Simplified - just determine action for each keyword
   const contextualAreas = [];
   
   keywords.slice(0, 5).forEach(keyword => {
-    // Find commits that mention this keyword
-    const relatedCommits = commitMessages.filter(msg => 
-      msg.toLowerCase().includes(keyword.toLowerCase())
-    );
+    // Count how many commits mention this keyword with each action
+    let added = 0, fixed = 0, improved = 0, updated = 0;
     
-    if (relatedCommits.length === 0) return;
+    for (const msg of commitMessages) {
+      const lower = msg.toLowerCase();
+      if (!lower.includes(keyword.toLowerCase())) continue;
+      
+      if (/\b(add|added|implement|new)\b/i.test(msg)) added++;
+      else if (/\b(fix|fixed|resolve|bug)\b/i.test(msg)) fixed++;
+      else if (/\b(improve|improved|enhance|optimize)\b/i.test(msg)) improved++;
+      else if (/\b(update|updated|refactor)\b/i.test(msg)) updated++;
+    }
     
-    // Determine what was done with this keyword
+    const total = added + fixed + improved + updated;
+    if (total === 0) return;
+    
+    // Pick the most common action
     let action = '';
     let count = 0;
     
-    // Check for common patterns
-    const added = relatedCommits.filter(msg => /\b(add|added|implement|new|introduce)\b/i.test(msg)).length;
-    const fixed = relatedCommits.filter(msg => /\b(fix|fixed|resolve|bug)\b/i.test(msg)).length;
-    const improved = relatedCommits.filter(msg => /\b(improve|improved|enhance|better|optimize)\b/i.test(msg)).length;
-    const updated = relatedCommits.filter(msg => /\b(update|updated|refactor|clean)\b/i.test(msg)).length;
-    const removed = relatedCommits.filter(msg => /\b(remove|removed|delete)\b/i.test(msg)).length;
-    
-    // Determine primary action
-    if (added > 0) {
+    if (added >= fixed && added >= improved && added >= updated) {
       action = 'added';
       count = added;
-    } else if (fixed > 0) {
+    } else if (fixed >= improved && fixed >= updated) {
       action = 'fixed';
       count = fixed;
-    } else if (improved > 0) {
+    } else if (improved >= updated) {
       action = 'improved';
       count = improved;
-    } else if (updated > 0) {
+    } else {
       action = 'updated';
       count = updated;
-    } else if (removed > 0) {
-      action = 'removed';
-      count = removed;
     }
     
-    // Try to extract more specific context from commit messages
-    let specificContext = '';
+    const keywordDisplay = keyword.charAt(0).toUpperCase() + keyword.slice(1);
     
-    // Look for patterns like "Add X for Y" or "Fix X in Y"
-    for (const msg of relatedCommits.slice(0, 3)) {
-      const lower = msg.toLowerCase();
-      
-      // Pattern: "keyword for/in/to something"
-      const contextMatch = msg.match(new RegExp(`${keyword}[\\s\\w]*?\\s+(?:for|in|to|of|with)\\s+([\\w\\s]{5,30})`, 'i'));
-      if (contextMatch && contextMatch[1]) {
-        const context = contextMatch[1].trim().replace(/\s+/g, ' ');
-        if (context.length > 4 && context.length < 35) {
-          specificContext = ` in ${context}`;
-          break;
-        }
-      }
-    }
-    
-    // Build the contextual description
-    if (action && count > 0) {
-      const keywordDisplay = keyword.charAt(0).toUpperCase() + keyword.slice(1);
-      
-      if (count === 1) {
-        contextualAreas.push(`${keywordDisplay} ${action}${specificContext}`);
-      } else {
-        contextualAreas.push(`${keywordDisplay} ${action} (${count} changes)${specificContext}`);
-      }
+    if (count > 2) {
+      contextualAreas.push(`${keywordDisplay} ${action} (${count} changes)`);
+    } else {
+      contextualAreas.push(`${keywordDisplay} ${action}`);
     }
   });
   
