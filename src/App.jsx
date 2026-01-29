@@ -171,7 +171,6 @@ function App() {
             fontFamily: 'Literata, serif',
             letterSpacing: '-1px',
             color: colors.text
-          }}
           }}>
             Git Repository Analyzer
           </h1>
