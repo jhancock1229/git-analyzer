@@ -336,41 +336,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Detect CI/CD and tooling
   const cicdTools = await detectCICDTools(owner, repo);
   
-  // Build summary with CI/CD info
-  let summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing.`;
-  
-  // Add engineering practices
-  const practices = [];
-  
-  if (cicdTools.cicd.length > 0) {
-    practices.push(`automated via ${cicdTools.cicd.join(', ')}`);
-  }
-  
-  if (cicdTools.containers) {
-    practices.push('containerized with Docker');
-  }
-  
-  if (cicdTools.testing.length > 0) {
-    practices.push(`tested with ${cicdTools.testing.slice(0, 2).join(', ')}`);
-  }
-  
-  if (cicdTools.coverage) {
-    practices.push('tracks code coverage');
-  }
-  
-  if (cicdTools.linting) {
-    practices.push('uses code linting');
-  }
-  
-  if (cicdTools.security.length > 0) {
-    practices.push(`secured with ${cicdTools.security.join(', ')}`);
-  }
-  
-  if (practices.length > 0) {
-    summary += ` Engineering practices: ${practices.join('; ')}.`;
-  }
-  
-  summary += ` The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
+  // Build summary WITHOUT CI/CD info
+  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing. The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
@@ -386,7 +353,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     timeline: [],
     graph: graphNodes,
     branchingAnalysis,
-    activitySummary: summary
+    activitySummary: summary,
+    cicdTools
   };
 }
 

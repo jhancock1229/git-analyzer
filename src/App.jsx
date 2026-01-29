@@ -361,6 +361,157 @@ function App() {
               </div>
             )}
 
+            {/* CI/CD & Engineering Tools */}
+            {data.cicdTools && (
+              <div style={{
+                background: colors.cardBg,
+                border: `2px solid ${colors.cardBorder}`,
+                borderRadius: '8px',
+                padding: '32px',
+                marginBottom: '40px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '24px'
+                }}>
+                  <span style={{ fontSize: '24px' }}>🔧</span>
+                  <h3 style={{
+                    margin: 0,
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    color: colors.text,
+                    fontFamily: 'Literata, serif'
+                  }}>
+                    Engineering Practices
+                  </h3>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+                  {/* CI/CD */}
+                  {data.cicdTools.cicd.length > 0 && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        ⚙️ CI/CD Pipeline
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        {data.cicdTools.cicd.join(', ')}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Containers */}
+                  {data.cicdTools.containers && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        🐳 Containerization
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        Docker
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Testing */}
+                  {data.cicdTools.testing.length > 0 && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        ✅ Testing
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        {data.cicdTools.testing.join(', ')}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Coverage */}
+                  {data.cicdTools.coverage && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        📊 Code Coverage
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        Enabled
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Linting */}
+                  {data.cicdTools.linting && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        🔍 Code Linting
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        Enabled
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Security */}
+                  {data.cicdTools.security.length > 0 && (
+                    <div style={{
+                      padding: '16px',
+                      background: darkMode ? '#1E3A4F' : '#E6F3FF',
+                      borderRadius: '6px',
+                      border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
+                        🔒 Security Scanning
+                      </div>
+                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
+                        {data.cicdTools.security.join(', ')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* No tools detected message */}
+                {data.cicdTools.cicd.length === 0 && 
+                 !data.cicdTools.containers && 
+                 data.cicdTools.testing.length === 0 && 
+                 !data.cicdTools.coverage && 
+                 !data.cicdTools.linting && 
+                 data.cicdTools.security.length === 0 && (
+                  <div style={{
+                    padding: '20px',
+                    textAlign: 'center',
+                    color: colors.text,
+                    opacity: 0.6,
+                    fontSize: '14px'
+                  }}>
+                    No CI/CD or automated tooling detected
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Branching Strategy Analysis */}
             {data.branchingAnalysis && (
               <div style={{ 
