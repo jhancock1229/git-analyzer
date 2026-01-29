@@ -120,6 +120,47 @@ function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch
   return analysis;
 }
 
+function analyzePRActivity(mergedPRs) {
+  const prInsights = {
+    recentWork: [],
+    prTypes: { features: 0, bugfixes: 0, dependencies: 0 }
+  };
+  
+  if (mergedPRs.length === 0) return prInsights;
+  
+  const workAreaFrequency = new Map();
+  
+  mergedPRs.forEach(pr => {
+    const title = pr.title;
+    
+    // Categorize PR type
+    if (/\b(feat|feature|add|new|implement)\b/i.test(title)) prInsights.prTypes.features++;
+    else if (/\b(fix|bug|issue|resolve|patch)\b/i.test(title)) prInsights.prTypes.bugfixes++;
+    else if (/\b(dep|dependency|bump|upgrade)\b/i.test(title)) prInsights.prTypes.dependencies++;
+    
+    // Extract work area (what was changed)
+    let workArea = title
+      .replace(/^(feat|feature|fix|bug|refactor|docs?|chore|test|perf|ci)(\(.*?\))?:?\s*/i, '')
+      .replace(/\b(add|added|update|updated|fix|fixed|improve|improved)\b/gi, '')
+      .trim();
+    
+    const words = workArea.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      workArea = words.slice(0, 4).join(' ').toLowerCase();
+      if (workArea.length > 5 && workArea.length < 60) {
+        workAreaFrequency.set(workArea, (workAreaFrequency.get(workArea) || 0) + 1);
+      }
+    }
+  });
+  
+  prInsights.recentWork = Array.from(workAreaFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([area]) => area);
+  
+  return prInsights;
+}
+
 async function detectCICDTools(owner, repo) {
   const tools = {
     cicd: [],
@@ -432,8 +473,30 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Detect CI/CD and tooling
   const cicdTools = await detectCICDTools(owner, repo);
   
-  // Build summary WITHOUT CI/CD info
-  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing. The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
+  // Analyze PR activity for recent work context
+  const prInsights = analyzePRActivity(mergedPRsInRange);
+  
+  // Build summary with PR context
+  let summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} ${contributors.size === 1 ? 'developer' : 'developers'} contributing.`;
+  
+  // Add PR-based work summary
+  if (mergedPRsInRange.length > 0) {
+    const prSummary = [];
+    
+    if (prInsights.prTypes.features > 0) prSummary.push(`${prInsights.prTypes.features} new features`);
+    if (prInsights.prTypes.bugfixes > 0) prSummary.push(`${prInsights.prTypes.bugfixes} bug fixes`);
+    if (prInsights.prTypes.dependencies > 0) prSummary.push(`${prInsights.prTypes.dependencies} dependency updates`);
+    
+    if (prSummary.length > 0) {
+      summary += ` ${mergedPRsInRange.length} pull requests merged: ${prSummary.join(', ')}.`;
+    }
+    
+    if (prInsights.recentWork.length > 0) {
+      summary += ` Recent work includes: ${prInsights.recentWork.join(', ')}.`;
+    }
+  }
+  
+  summary += ` The team follows ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
