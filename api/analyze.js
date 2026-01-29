@@ -171,6 +171,19 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const sinceDate = getTimeRangeDate(timeRange);
   
   const repoInfo = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
+  const repoDescription = repoInfo.description || '';
+  const repoLanguage = repoInfo.language || 'Unknown';
+  
+  let readmeContent = '';
+  try {
+    const readme = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/readme`);
+    if (readme.content) {
+      const fullContent = Buffer.from(readme.content, 'base64').toString('utf-8');
+      readmeContent = fullContent.substring(0, 3000);
+    }
+  } catch (error) {
+    // README not found
+  }
   const primaryBranch = repoInfo.default_branch;
   
   const branches = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/branches`, {
@@ -383,7 +396,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     staleBranches: staleBranches.length,
     mergeCount: merges.length,
     branchingStrategy: branchingAnalysis.strategy,
-    workflow: branchingAnalysis.workflow
+    workflow: branchingAnalysis.workflow,
+    repoDescription,
+    repoLanguage,
+    readmeContent,
+    repoName: `${owner}/${repo}`
   });
   
   return {
@@ -403,6 +420,63 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     activitySummary: summary
   };
 }
+
+function generateRepoSummary(data) {
+  // Generate 2-3 sentence description of what the repo does
+  const { repoDescription, repoLanguage, readmeContent, repoName, commitMessages } = data;
+  
+  // Start with repo description if available
+  if (repoDescription && repoDescription.length > 10) {
+    return `${repoName} is ${repoDescription.charAt(0).toLowerCase() + repoDescription.slice(1)}`;
+  }
+  
+  // Extract from README if available
+  if (readmeContent) {
+    // Look for common README patterns
+    const lines = readmeContent.split('\n').filter(line => line.trim().length > 20);
+    
+    // Find first substantial paragraph after title
+    for (let i = 0; i < Math.min(lines.length, 20); i++) {
+      const line = lines[i].trim();
+      // Skip markdown headers, badges, images
+      if (line.startsWith('#') || line.startsWith('!') || line.startsWith('[!')) continue;
+      if (line.length > 50 && line.length < 300) {
+        // Clean up markdown
+        const cleaned = line
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links
+          .replace(/[*_`]/g, '') // Remove formatting
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (cleaned.length > 30) {
+          return `${repoName}: ${cleaned}`;
+        }
+      }
+    }
+  }
+  
+  // Fallback: infer from language and commit patterns
+  if (repoLanguage && repoLanguage !== 'Unknown') {
+    const commitKeywords = commitMessages ? commitMessages.slice(0, 50).join(' ').toLowerCase() : '';
+    let purpose = '';
+    
+    if (commitKeywords.includes('api') || commitKeywords.includes('server') || commitKeywords.includes('backend')) {
+      purpose = `a ${repoLanguage} backend service`;
+    } else if (commitKeywords.includes('frontend') || commitKeywords.includes('ui') || commitKeywords.includes('component')) {
+      purpose = `a ${repoLanguage} frontend application`;
+    } else if (commitKeywords.includes('library') || commitKeywords.includes('package')) {
+      purpose = `a ${repoLanguage} library`;
+    } else if (commitKeywords.includes('cli') || commitKeywords.includes('command')) {
+      purpose = `a ${repoLanguage} command-line tool`;
+    } else {
+      purpose = `a ${repoLanguage} project`;
+    }
+    
+    return `${repoName} is ${purpose}.`;
+  }
+  
+  return null; // No description available
+}
+
 
 function generateActivitySummary(data) {
   const parts = [];
