@@ -76,23 +76,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const repoDescription = repoInfo.description || '';
   const repoLanguage = repoInfo.language || 'Unknown';
   
-  // Try to get README for more context
-  let readmeContent = '';
-  try {
-    const readme = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/readme`);
-    if (readme.content) {
-      // Decode base64 README content (first 3000 chars only)
-      try {
-        const fullContent = atob(readme.content);
-        readmeContent = fullContent.substring(0, 3000);
-      } catch (e) {
-        // Decoding failed
-        readmeContent = '';
-      }
-    }
-  } catch (error) {
-    // README not found - continue without it
-  }
+  // Skip README fetching to avoid timeouts on Vercel
+  const readmeContent = '';
   
   console.log(`✓ Primary branch: ${primaryBranch}`);
   
@@ -574,20 +559,24 @@ function analyzeChanges(commitMessages) {
     const lower = msg.toLowerCase();
     
     // Count change types AND extract capabilities
-    if (/\b(feat|feature|add|new|implement|introduce)\b/i.test(msg)) {
-      analysis.features++;
-      const caps = extractCapability(msg, 'added');
-      allCapabilities.push(...caps);
-    }
-    if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
-      analysis.bugfixes++;
-      const caps = extractCapability(msg, 'fixed');
-      allCapabilities.push(...caps);
-    }
-    if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
-      analysis.improvements++;
-      const caps = extractCapability(msg, 'improved');
-      allCapabilities.push(...caps);
+    try {
+      if (/\b(feat|feature|add|new|implement|introduce)\b/i.test(msg)) {
+        analysis.features++;
+        const caps = extractCapability(msg, 'added');
+        allCapabilities.push(...caps);
+      }
+      if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) {
+        analysis.bugfixes++;
+        const caps = extractCapability(msg, 'fixed');
+        allCapabilities.push(...caps);
+      }
+      if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) {
+        analysis.improvements++;
+        const caps = extractCapability(msg, 'improved');
+        allCapabilities.push(...caps);
+      }
+    } catch (e) {
+      // Skip if capability extraction fails
     }
     if (/\b(refactor|restructure|reorganize|cleanup|clean up)\b/i.test(msg)) {
       analysis.refactors++;
