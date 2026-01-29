@@ -153,8 +153,24 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Branching strategy detection
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   
-  // Simple summary
-  const summary = `${repoInfo.description || `${owner}/${repo}`} - Over ${getTimeRangeLabel(timeRange).toLowerCase()}, the team made ${allCommits.length} updates with ${contributors.size} developers contributing. The team is using ${branchingAnalysis.strategy} with ${branchingAnalysis.workflow.toLowerCase()}.`;
+  // Detailed summary with change analysis
+  const commitMessages = graphNodes.map(node => node.subject);
+  const topContributors = Array.from(contributors.values()).sort((a, b) => b.commits - a.commits).slice(0, 5);
+  
+  const summary = generateActivitySummary({
+    repoDescription: repoInfo.description || '',
+    repoName: `${owner}/${repo}`,
+    timeRange: getTimeRangeLabel(timeRange),
+    totalCommits: allCommits.length,
+    contributorCount: contributors.size,
+    topContributors,
+    commitMessages,
+    activeBranches: activeBranches.length,
+    staleBranches: staleBranches.length,
+    mergeCount: merges.length,
+    branchingStrategy: branchingAnalysis.strategy,
+    workflow: branchingAnalysis.workflow
+  });
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
@@ -241,6 +257,132 @@ function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch
   if (hotfix > 0) analysis.patterns.push({ type: 'Hotfix Branches', count: hotfix });
   if (develop > 0) analysis.patterns.push({ type: 'Development Branches', count: develop });
   if (release > 0) analysis.patterns.push({ type: 'Release Branches', count: release });
+  
+  return analysis;
+}
+
+function generateActivitySummary(data) {
+  const parts = [];
+  
+  // Repo description
+  if (data.repoDescription && data.repoDescription.length > 10) {
+    parts.push(`${data.repoName}: ${data.repoDescription}`);
+  } else {
+    parts.push(`${data.repoName}`);
+  }
+  
+  // Activity level
+  parts.push(`Over ${data.timeRange.toLowerCase()}, the team made ${data.totalCommits} updates with ${data.contributorCount} ${data.contributorCount === 1 ? 'developer' : 'developers'} contributing.`);
+  
+  // Analyze changes
+  if (data.commitMessages && data.commitMessages.length > 0) {
+    const changeAnalysis = analyzeChanges(data.commitMessages);
+    
+    // Deliverables
+    const deliverables = [];
+    if (changeAnalysis.features > 0) deliverables.push(`${changeAnalysis.features} new features delivered`);
+    if (changeAnalysis.improvements > 0) deliverables.push(`${changeAnalysis.improvements} enhancements`);
+    if (changeAnalysis.bugfixes > 0) deliverables.push(`${changeAnalysis.bugfixes} issues resolved`);
+    
+    if (deliverables.length > 0) {
+      parts.push(`Key deliverables: ${deliverables.join(', ')}.`);
+    }
+    
+    // Focus areas
+    if (changeAnalysis.keywords.length > 0) {
+      const focusAreas = changeAnalysis.keywords.slice(0, 5).join(', ');
+      parts.push(`Primary focus areas: ${focusAreas}.`);
+    }
+    
+    // Notable impacts
+    const impacts = [];
+    if (changeAnalysis.performance > 0) impacts.push(`performance improvements (${changeAnalysis.performance})`);
+    if (changeAnalysis.security > 0) impacts.push(`security enhancements (${changeAnalysis.security})`);
+    if (changeAnalysis.breaking > 0) impacts.push(`⚠️ breaking changes (${changeAnalysis.breaking})`);
+    
+    if (impacts.length > 0) {
+      parts.push(`Notable impacts: ${impacts.join(', ')}.`);
+    }
+    
+    // Quality indicators
+    if (changeAnalysis.tests > data.totalCommits * 0.2) {
+      parts.push(`Strong testing focus with ${Math.round((changeAnalysis.tests / data.totalCommits) * 100)}% of work including tests.`);
+    }
+  }
+  
+  // Top contributors
+  if (data.topContributors.length > 0) {
+    const topNames = data.topContributors.slice(0, 3).map(c => c.name).join(', ');
+    parts.push(`Top contributors: ${topNames}.`);
+  }
+  
+  // Collaboration
+  if (data.mergeCount > 5) {
+    parts.push(`Strong collaboration with ${data.mergeCount} code reviews and merges.`);
+  }
+  
+  // Stale branches warning
+  if (data.staleBranches > 5) {
+    parts.push(`⚠️ ${data.staleBranches} inactive branches should be reviewed for cleanup.`);
+  }
+  
+  // Workflow
+  parts.push(`The team follows ${data.branchingStrategy} with ${data.workflow.toLowerCase()}.`);
+  
+  return parts.join(' ');
+}
+
+function analyzeChanges(commitMessages) {
+  const analysis = {
+    keywords: [],
+    features: 0,
+    bugfixes: 0,
+    improvements: 0,
+    tests: 0,
+    docs: 0,
+    performance: 0,
+    security: 0,
+    breaking: 0
+  };
+  
+  const stopWords = new Set([
+    'add', 'added', 'adds', 'update', 'updated', 'updates', 'fix', 'fixed', 'fixes',
+    'remove', 'removed', 'removes', 'change', 'changed', 'changes', 'improve', 'improved',
+    'merge', 'merged', 'commit', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on',
+    'at', 'to', 'for', 'of', 'with', 'from', 'by', 'make', 'made', 'use', 'used'
+  ]);
+  
+  const wordFrequency = new Map();
+  
+  commitMessages.forEach(msg => {
+    const lower = msg.toLowerCase();
+    
+    // Count change types
+    if (/\b(feat|feature|add|new|implement)\b/i.test(msg)) analysis.features++;
+    if (/\b(fix|bug|issue|resolve|patch)\b/i.test(msg)) analysis.bugfixes++;
+    if (/\b(improve|enhance|better|optimize|upgrade)\b/i.test(msg)) analysis.improvements++;
+    if (/\b(test|spec|jest|mocha|unit)\b/i.test(msg)) analysis.tests++;
+    if (/\b(doc|docs|documentation|readme)\b/i.test(msg)) analysis.docs++;
+    if (/\b(performance|perf|speed|faster)\b/i.test(msg)) analysis.performance++;
+    if (/\b(security|vulnerability|cve|auth)\b/i.test(msg)) analysis.security++;
+    if (/\b(breaking|break)\b/i.test(msg)) analysis.breaking++;
+    
+    // Extract keywords
+    const words = lower
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3 && !stopWords.has(word));
+    
+    words.forEach(word => {
+      wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
+    });
+  });
+  
+  // Get top keywords
+  analysis.keywords = Array.from(wordFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([word]) => word);
   
   return analysis;
 }
