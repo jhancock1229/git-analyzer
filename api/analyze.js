@@ -383,6 +383,13 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const pullRequests = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, { state: 'closed', per_page: 100 });
   const mergedPRs = pullRequests.filter(pr => pr.merged_at);
   
+  // Filter merged PRs by time range
+  const mergedPRsInRange = mergedPRs.filter(pr => {
+    if (!sinceDate) return true;
+    const mergedDate = new Date(pr.merged_at);
+    return mergedDate >= new Date(sinceDate);
+  });
+  
   const contributors = new Map();
   const graphNodes = [];
   
@@ -410,8 +417,15 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     });
   }
   
-  const merges = allCommits.filter(c => c.parents && c.parents.length > 1).slice(0, 10)
-    .map(c => ({ author: c.commit.author.name, branchName: 'merged', time: new Date(c.commit.author.date).toLocaleString() }));
+  // Create merge list from merged PRs (more accurate than merge commits)
+  const merges = mergedPRsInRange.slice(0, 10).map(pr => ({
+    author: pr.user.login,
+    branchName: pr.head.ref,
+    time: new Date(pr.merged_at).toLocaleString(),
+    title: pr.title,
+    number: pr.number,
+    url: pr.html_url
+  }));
   
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   
