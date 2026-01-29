@@ -82,8 +82,13 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     const readme = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/readme`);
     if (readme.content) {
       // Decode base64 README content (first 3000 chars only)
-      const fullContent = Buffer.from(readme.content, 'base64').toString('utf-8');
-      readmeContent = fullContent.substring(0, 3000);
+      try {
+        const fullContent = atob(readme.content);
+        readmeContent = fullContent.substring(0, 3000);
+      } catch (e) {
+        // Decoding failed
+        readmeContent = '';
+      }
     }
   } catch (error) {
     // README not found - continue without it
