@@ -612,35 +612,6 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const cicdTools = await detectCICDTools(owner, repo);
   
   // Analyze the most recent commit on primary branch
-  const recentCommitAnalysis = await analyzeMostRecentCommit(owner, repo, primaryBranch);
-  
-  // Analyze PR activity for recent work context
-  const prInsights = analyzePRActivity(mergedPRsInRange);
-  
-  // Build conversational executive summary
-  let summary = '';
-  
-  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '').replace('all time', 'historically');
-  const commitCount = allCommits.length;
-  const devCount = contributors.size;
-  
-  // Most recent change context
-  if (recentCommitAnalysis) {
-    const timeSince = Math.floor((new Date() - new Date(recentCommitAnalysis.date)) / (1000 * 60));
-    let timeAgo = '';
-    
-    if (timeSince < 60) {
-      timeAgo = `${timeSince} ${timeSince === 1 ? 'minute' : 'minutes'} ago`;
-    } else if (timeSince < 1440) {
-      const hours = Math.floor(timeSince / 60);
-      timeAgo = `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-    } else {
-      const days = Math.floor(timeSince / 1440);
-      timeAgo = `${days} ${days === 1 ? 'day' : 'days'} ago`;
-    }
-    
-    summary = `Latest: ${recentCommitAnalysis.humanDescription} (${timeAgo}). `;
-  }
   
   // Start with activity level in plain English
   if (commitCount === 0) {
