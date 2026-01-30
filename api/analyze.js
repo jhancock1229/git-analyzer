@@ -290,19 +290,113 @@ async function detectCICDTools(owner, repo) {
   };
   
   try {
-    // Only check most common CI/CD (GitHub Actions) to save API calls
-    try {
-      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.github/workflows`);
-      tools.cicd.push({ name: 'GitHub Actions', path: '.github/workflows', url: `https://github.com/${owner}/${repo}/tree/main/.github/workflows` });
-    } catch (e) {}
+    // Strategy: Check all files in PARALLEL using Promise.allSettled
+    // This makes 1 API call per file simultaneously instead of sequentially
+    // Much faster than waiting for each check one by one
     
-    // Only check Docker
-    try {
-      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/Dockerfile`);
-      tools.containers.push({ name: 'Dockerfile', path: 'Dockerfile', url: `https://github.com/${owner}/${repo}/blob/main/Dockerfile` });
-    } catch (e) {}
+    const checks = [
+      // CI/CD platforms
+      { path: '.github/workflows', type: 'cicd', name: 'GitHub Actions', urlType: 'tree' },
+      { path: '.gitlab-ci.yml', type: 'cicd', name: 'GitLab CI', urlType: 'blob' },
+      { path: '.travis.yml', type: 'cicd', name: 'Travis CI', urlType: 'blob' },
+      { path: '.circleci/config.yml', type: 'cicd', name: 'CircleCI', urlType: 'blob' },
+      { path: 'Jenkinsfile', type: 'cicd', name: 'Jenkins', urlType: 'blob' },
+      
+      // Containers
+      { path: 'Dockerfile', type: 'containers', name: 'Dockerfile', urlType: 'blob' },
+      { path: 'docker-compose.yml', type: 'containers', name: 'docker-compose.yml', urlType: 'blob' },
+      
+      // Coverage
+      { path: 'codecov.yml', type: 'coverage', name: 'Codecov', urlType: 'blob' },
+      { path: '.coveragerc', type: 'coverage', name: 'Coverage.py', urlType: 'blob' },
+      
+      // Linting
+      { path: '.eslintrc', type: 'linting', name: 'ESLint', urlType: 'blob' },
+      { path: '.eslintrc.js', type: 'linting', name: 'ESLint', urlType: 'blob' },
+      { path: '.pylintrc', type: 'linting', name: 'Pylint', urlType: 'blob' },
+      
+      // Security
+      { path: '.github/dependabot.yml', type: 'security', name: 'Dependabot', urlType: 'blob' },
+      { path: '.snyk', type: 'security', name: 'Snyk', urlType: 'blob' }
+    ];
     
-  } catch (error) {}
+    // Execute all checks in parallel (much faster!)
+    const results = await Promise.allSettled(
+      checks.map(check => 
+        githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${check.path}`)
+          .then(() => ({ ...check, exists: true }))
+          .catch(() => ({ ...check, exists: false }))
+      )
+    );
+    
+    // Process results
+    const seenTypes = new Set();
+    results.forEach(result => {
+      if (result.status === 'fulfilled' && result.value.exists) {
+        const item = result.value;
+        
+        // Only add first of each type for linting/coverage to avoid duplicates
+        if ((item.type === 'linting' || item.type === 'coverage') && seenTypes.has(item.type)) {
+          return;
+        }
+        
+        const url = `https://github.com/${owner}/${repo}/${item.urlType}/main/${item.path}`;
+        
+        if (item.type === 'testing') {
+          tools[item.type].push({ framework: item.name, file: item.path, url });
+        } else {
+          tools[item.type].push({ name: item.name, path: item.path, url });
+        }
+        
+        if (item.type === 'linting' || item.type === 'coverage') {
+          seenTypes.add(item.type);
+        }
+      }
+    });
+    
+    // Check testing frameworks by reading package.json/requirements.txt in parallel
+    const testFileChecks = [
+      { path: 'package.json', frameworks: ['jest', 'mocha', 'vitest', 'cypress'] },
+      { path: 'requirements.txt', frameworks: ['pytest', 'unittest'] },
+      { path: 'pom.xml', frameworks: ['junit'] },
+      { path: 'Gemfile', frameworks: ['rspec', 'minitest'] }
+    ];
+    
+    const testResults = await Promise.allSettled(
+      testFileChecks.map(async (fileCheck) => {
+        const content = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${fileCheck.path}`);
+        if (content.content) {
+          const decoded = atob(content.content);
+          const foundFrameworks = [];
+          for (const framework of fileCheck.frameworks) {
+            if (decoded.toLowerCase().includes(framework)) {
+              foundFrameworks.push({
+                framework,
+                file: fileCheck.path,
+                url: `https://github.com/${owner}/${repo}/blob/main/${fileCheck.path}`
+              });
+            }
+          }
+          return foundFrameworks;
+        }
+        return [];
+      })
+    );
+    
+    // Add found test frameworks
+    testResults.forEach(result => {
+      if (result.status === 'fulfilled' && result.value) {
+        result.value.forEach(test => {
+          if (!tools.testing.find(t => t.framework === test.framework)) {
+            tools.testing.push(test);
+          }
+        });
+      }
+    });
+    
+  } catch (error) {
+    // If detection fails entirely, return empty tools
+  }
   
   return tools;
 }
@@ -320,16 +414,18 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   let allCommits = [];
   const commitMap = new Map();
   
-  // CRITICAL: Limit to 5 branches, 2 pages each to prevent Vercel timeout (10s limit)
-  // This gives us max 10 API calls for commits instead of 60
-  const maxBranches = 5;
-  const maxPages = 2;
+  // SMART STRATEGY: 
+  // - Fetch primary branch with more data (important)
+  // - Fetch other branches in parallel where possible
+  // - Use time filter to reduce data volume
+  const maxOtherBranches = 10; // Increased from 5 since we're optimizing elsewhere
+  const maxPagesPerBranch = 2;
   
-  // Fetch primary branch first without time filter
+  // Fetch primary branch first (most important, gets more data)
   const primaryBranchObj = branches.find(b => b.name === primaryBranch);
   if (primaryBranchObj) {
     let branchPage = 1;
-    while (branchPage <= maxPages) {
+    while (branchPage <= 3) { // Primary gets 3 pages (300 commits)
       const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
       try {
         const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
@@ -362,12 +458,12 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
   }
   
-  // Fetch other branches
-  for (const branch of branches.slice(0, maxBranches)) {
+  // Fetch other branches (with time filter for efficiency)
+  for (const branch of branches.slice(0, maxOtherBranches)) {
     if (branch.name === primaryBranch) continue;
     
     let branchPage = 1;
-    while (branchPage <= maxPages) {
+    while (branchPage <= maxPagesPerBranch) {
       const params = { per_page: 100, page: branchPage, sha: branch.name };
       if (sinceDate) params.since = sinceDate;
       
