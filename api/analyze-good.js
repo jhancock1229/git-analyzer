@@ -212,16 +212,16 @@ function analyzePRActivity(mergedPRs) {
 
 async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) {
   if (!recentCommits || recentCommits.length === 0) {
-    return { narrative: 'No commits found in the selected time period.' };
+    return { narrative: 'No recent activity to report.' };
   }
   
-  console.log(`[NARRATIVE] Total commits available: ${recentCommits.length}`);
-  
-  // Always generate narrative - even if we can't get detailed file info
   try {
-    // Try to get detailed commits with file changes
+    // Take only the 10 most recent commits for deep analysis
     const commitsToAnalyze = recentCommits.slice(0, Math.min(limit, recentCommits.length));
     
+    console.log(`[NARRATIVE] Analyzing ${commitsToAnalyze.length} recent commits with code diffs`);
+    
+    // Fetch full commit details INCLUDING patches (code diffs)
     const commitDetails = await Promise.allSettled(
       commitsToAnalyze.map(commit => 
         githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commit.sha}`)
@@ -229,219 +229,413 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
       )
     );
     
-    const detailedCommits = [];
+    // Process commits with their code changes
+    const commitsWithDiffs = [];
     commitDetails.forEach((result) => {
       if (result.status !== 'fulfilled' || !result.value?.files) return;
       
       const commit = result.value;
-      detailedCommits.push({
+      commitsWithDiffs.push({
         message: commit.commit.message.split('\n')[0],
+        fullMessage: commit.commit.message,
         author: commit.commit.author.name,
         date: new Date(commit.commit.author.date),
         sha: commit.sha.substring(0, 7),
+        url: commit.html_url,
         files: commit.files.map(f => ({
           filename: f.filename,
           status: f.status,
           additions: f.additions || 0,
-          deletions: f.deletions || 0
+          deletions: f.deletions || 0,
+          patch: f.patch || '' // The actual code diff!
         }))
       });
     });
     
-    console.log(`[NARRATIVE] Got ${detailedCommits.length} detailed commits`);
+    console.log(`[NARRATIVE] Successfully fetched ${commitsWithDiffs.length} commits with diffs`);
     
-    // Generate narrative - use detailed commits if available, otherwise use basic list
-    const narrative = detailedCommits.length > 0 
-      ? generateDetailedNarrative(detailedCommits, recentCommits, owner, repo)
-      : generateBasicNarrative(recentCommits, owner, repo);
+    // Generate narrative by reading the actual code
+    const narrative = writeCodeNarrative(commitsWithDiffs, owner, repo);
     
     return { narrative };
     
   } catch (error) {
-    console.error('[NARRATIVE] Error:', error);
-    // Fallback to basic narrative
-    return { narrative: generateBasicNarrative(recentCommits, owner, repo) };
+    console.error('Error analyzing commits:', error);
+    return { narrative: 'Unable to generate development narrative.' };
   }
 }
 
-function generateDetailedNarrative(detailedCommits, allCommits, owner, repo) {
+function writeCodeNarrative(commits, owner, repo) {
+  if (commits.length === 0) return 'No recent development activity.';
+  
   const story = [];
   
-  story.push(`# Development Activity: ${owner}/${repo}`);
+  // Header
+  story.push(`# What the Team Has Been Building`);
+  story.push(`*Based on the last ${commits.length} commits*`);
   story.push('');
-  story.push(`**${allCommits.length} commits** in this period`);
+  
+  // Date range
+  const newest = commits[0].date;
+  const oldest = commits[commits.length - 1].date;
+  const days = Math.ceil((newest - oldest) / (1000 * 60 * 60 * 24));
+  
+  story.push(`**Time Period:** ${formatDate(oldest)} to ${formatDate(newest)} (${days} day${days !== 1 ? 's' : ''})`);
   story.push('');
   story.push('---');
   story.push('');
   
-  // Analyze work areas from file changes
-  const workAreas = analyzeWorkAreas(detailedCommits);
-  
-  story.push('## 🔥 Active Development Areas:');
+  // Analyze the code changes and write a narrative
+  story.push('## What the Code Is Doing');
   story.push('');
   
-  Object.entries(workAreas)
-    .filter(([_, data]) => data.count > 0)
-    .sort((a, b) => b[1].count - a[1].count)
-    .forEach(([area, data]) => {
-      story.push(`**${area}** (${data.count} commits)`);
-      story.push(data.description);
-      if (data.examples.length > 0) {
-        data.examples.slice(0, 2).forEach(ex => {
-          story.push(`- ${ex}`);
-        });
-      }
-      story.push('');
-    });
+  // Group related changes
+  const workAreas = analyzeWorkAreas(commits);
   
-  // Recent commits
-  story.push('---');
-  story.push('');
-  story.push('## Recent Commits:');
-  story.push('');
-  
-  detailedCommits.slice(0, 8).forEach((commit, idx) => {
-    story.push(`${idx + 1}. **${commit.message}**`);
-    story.push(`   *${commit.author}*`);
-    if (commit.files && commit.files.length > 0) {
-      const fileTypes = {};
-      commit.files.forEach(f => {
-        const type = getFileType(f.filename);
-        fileTypes[type] = (fileTypes[type] || 0) + 1;
+  // Write narrative for each area of work
+  for (const [area, details] of Object.entries(workAreas)) {
+    if (details.commits.length === 0) continue;
+    
+    story.push(`### ${area}`);
+    story.push('');
+    story.push(details.narrative);
+    story.push('');
+    
+    if (details.technicalDetails.length > 0) {
+      story.push('**Technical changes:**');
+      details.technicalDetails.forEach(detail => {
+        story.push(`- ${detail}`);
       });
-      const parts = Object.entries(fileTypes).map(([t, c]) => `${c} ${t}`);
-      story.push(`   Changed: ${parts.join(', ')}`);
+      story.push('');
     }
+  }
+  
+  // Recent commit timeline
+  story.push('---');
+  story.push('');
+  story.push('## Recent Commit Timeline');
+  story.push('');
+  
+  commits.slice(0, 5).forEach((commit, idx) => {
+    story.push(`**${idx + 1}. ${commit.message}**`);
+    story.push(`*${formatDate(commit.date)} by ${commit.author}*`);
+    story.push('');
+    
+    // Write what this commit actually does
+    const explanation = explainCommit(commit);
+    story.push(explanation);
     story.push('');
   });
   
   return story.join('\n');
 }
 
-function generateBasicNarrative(commits, owner, repo) {
-  const story = [];
-  
-  story.push(`# Development Activity: ${owner}/${repo}`);
-  story.push('');
-  story.push(`**${commits.length} commits** in this period`);
-  story.push('');
-  story.push('---');
-  story.push('');
-  
-  // Categorize by commit messages
-  const categories = categorizeByMessage(commits.slice(0, 50));
-  
-  story.push('## Work Categories:');
-  story.push('');
-  
-  Object.entries(categories)
-    .filter(([_, items]) => items.length > 0)
-    .sort((a, b) => b[1].length - a[1].length)
-    .forEach(([category, items]) => {
-      story.push(`**${category}** (${items.length} commits)`);
-      items.slice(0, 3).forEach(msg => {
-        story.push(`- ${msg}`);
-      });
-      if (items.length > 3) {
-        story.push(`- ...and ${items.length - 3} more`);
-      }
-      story.push('');
-    });
-  
-  return story.join('\n');
-}
-
 function analyzeWorkAreas(commits) {
   const areas = {
-    'GPU & Accelerator Support': { count: 0, description: 'CUDA, ROCm, Intel XPU, and other GPU backend improvements', examples: [] },
-    'Performance & Optimization': { count: 0, description: 'Compiler improvements, kernel optimizations, speed enhancements', examples: [] },
-    'Distributed Computing': { count: 0, description: 'Distributed tensors, parallelization, multi-device coordination', examples: [] },
-    'Core Framework': { count: 0, description: 'Core PyTorch APIs, operators, and framework functionality', examples: [] },
-    'Testing & CI/CD': { count: 0, description: 'Test coverage, continuous integration, build infrastructure', examples: [] },
-    'Bug Fixes & Stability': { count: 0, description: 'Issue resolution, crash fixes, stability improvements', examples: [] }
+    'User Interface': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Backend Services': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Database & Data': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Infrastructure & Configuration': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Testing & Quality': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    }
   };
   
+  // Categorize commits
   commits.forEach(commit => {
-    const msg = commit.message.toLowerCase();
-    const files = commit.files.map(f => f.filename.toLowerCase()).join(' ');
-    
-    if (msg.match(/cuda|rocm|xpu|gpu|intel|amd|nvidia/) || files.match(/cuda|rocm|xpu/)) {
-      areas['GPU & Accelerator Support'].count++;
-      if (areas['GPU & Accelerator Support'].examples.length < 3) {
-        areas['GPU & Accelerator Support'].examples.push(commit.message);
+    commit.files.forEach(file => {
+      const f = file.filename.toLowerCase();
+      
+      // UI/Frontend
+      if (f.match(/component|view|page|\.jsx|\.tsx|\.vue|\.css|\.scss/)) {
+        areas['User Interface'].commits.push(commit);
+        areas['User Interface'].files.push(file);
+        areas['User Interface'].patches.push(file.patch);
       }
-    } else if (msg.match(/perf|optim|speed|fast|inductor|compiler/)) {
-      areas['Performance & Optimization'].count++;
-      if (areas['Performance & Optimization'].examples.length < 3) {
-        areas['Performance & Optimization'].examples.push(commit.message);
+      // Backend
+      else if (f.match(/api|endpoint|route|controller|service|\.py|\.java|\.go|\.rb/)) {
+        areas['Backend Services'].commits.push(commit);
+        areas['Backend Services'].files.push(file);
+        areas['Backend Services'].patches.push(file.patch);
       }
-    } else if (msg.match(/distribut|dtensor|parallel|shard/) || files.match(/distributed|dtensor/)) {
-      areas['Distributed Computing'].count++;
-      if (areas['Distributed Computing'].examples.length < 3) {
-        areas['Distributed Computing'].examples.push(commit.message);
+      // Database
+      else if (f.match(/model|schema|migration|database|db/)) {
+        areas['Database & Data'].commits.push(commit);
+        areas['Database & Data'].files.push(file);
+        areas['Database & Data'].patches.push(file.patch);
       }
-    } else if (msg.match(/test|ci|build/) || files.match(/test|ci/)) {
-      areas['Testing & CI/CD'].count++;
-      if (areas['Testing & CI/CD'].examples.length < 3) {
-        areas['Testing & CI/CD'].examples.push(commit.message);
+      // Infrastructure
+      else if (f.match(/docker|\.yml|\.yaml|config|deploy|ci|cd/)) {
+        areas['Infrastructure & Configuration'].commits.push(commit);
+        areas['Infrastructure & Configuration'].files.push(file);
+        areas['Infrastructure & Configuration'].patches.push(file.patch);
       }
-    } else if (msg.match(/fix|bug|crash|error/)) {
-      areas['Bug Fixes & Stability'].count++;
-      if (areas['Bug Fixes & Stability'].examples.length < 3) {
-        areas['Bug Fixes & Stability'].examples.push(commit.message);
+      // Testing
+      else if (f.match(/test|spec|\.test\.|\.spec\./)) {
+        areas['Testing & Quality'].commits.push(commit);
+        areas['Testing & Quality'].files.push(file);
+        areas['Testing & Quality'].patches.push(file.patch);
       }
-    } else {
-      areas['Core Framework'].count++;
-      if (areas['Core Framework'].examples.length < 3) {
-        areas['Core Framework'].examples.push(commit.message);
-      }
-    }
+    });
   });
+  
+  // Generate narratives for each area by reading the code
+  for (const [areaName, area] of Object.entries(areas)) {
+    if (area.commits.length === 0) continue;
+    
+    area.narrative = generateAreaNarrative(areaName, area);
+    area.technicalDetails = extractTechnicalDetails(area);
+  }
   
   return areas;
 }
 
-function categorizeByMessage(commits) {
-  const categories = {
-    'Features & Enhancements': [],
-    'Bug Fixes': [],
-    'Performance': [],
-    'Testing': [],
-    'Documentation': [],
-    'Refactoring': []
+function generateAreaNarrative(areaName, area) {
+  const uniqueCommits = [...new Set(area.commits.map(c => c.sha))];
+  const fileCount = area.files.length;
+  
+  let narrative = '';
+  
+  // Analyze what the code is doing based on patches
+  const codePatterns = analyzeCodePatterns(area.patches, area.files);
+  
+  if (areaName === 'User Interface') {
+    narrative = `The team has been updating the user interface. `;
+    
+    if (codePatterns.newComponents) {
+      narrative += `They've created new interface components that ${codePatterns.purpose || 'enhance the user experience'}. `;
+    }
+    if (codePatterns.apiCalls) {
+      narrative += `These components connect to backend services to fetch and display data. `;
+    }
+    if (codePatterns.stateManagement) {
+      narrative += `The code manages user interactions and keeps the interface responsive. `;
+    }
+    if (codePatterns.styling) {
+      narrative += `Visual styling has been updated to improve the look and feel. `;
+    }
+  }
+  else if (areaName === 'Backend Services') {
+    narrative = `The backend infrastructure is being enhanced. `;
+    
+    if (codePatterns.newEndpoints) {
+      narrative += `New API endpoints have been added to handle ${codePatterns.purpose || 'additional functionality'}. `;
+    }
+    if (codePatterns.dataProcessing) {
+      narrative += `The code processes incoming requests, validates data, and performs business logic. `;
+    }
+    if (codePatterns.authentication) {
+      narrative += `Security measures including authentication and authorization are being implemented. `;
+    }
+    if (codePatterns.database) {
+      narrative += `These services interact with the database to store and retrieve information. `;
+    }
+  }
+  else if (areaName === 'Database & Data') {
+    narrative = `Data structures are being modified. `;
+    
+    if (codePatterns.newTables) {
+      narrative += `New database tables or collections are being created to store ${codePatterns.purpose || 'application data'}. `;
+    }
+    if (codePatterns.migrations) {
+      narrative += `Database migrations ensure existing data is preserved while the structure evolves. `;
+    }
+    if (codePatterns.relationships) {
+      narrative += `Relationships between different data entities are being established. `;
+    }
+  }
+  else if (areaName === 'Infrastructure & Configuration') {
+    narrative = `The deployment and infrastructure setup is being refined. `;
+    
+    if (codePatterns.docker) {
+      narrative += `Container configurations ensure the application runs consistently across different environments. `;
+    }
+    if (codePatterns.cicd) {
+      narrative += `Automated testing and deployment pipelines are being configured. `;
+    }
+    if (codePatterns.config) {
+      narrative += `Environment settings and configuration files are being updated. `;
+    }
+  }
+  else if (areaName === 'Testing & Quality') {
+    narrative = `Quality assurance is being strengthened. `;
+    
+    if (codePatterns.unitTests) {
+      narrative += `New tests verify that individual components work correctly. `;
+    }
+    if (codePatterns.integrationTests) {
+      narrative += `Integration tests ensure different parts of the system work together properly. `;
+    }
+    if (codePatterns.coverage) {
+      narrative += `Test coverage is being expanded to catch potential issues early. `;
+    }
+  }
+  
+  narrative += `(${uniqueCommits.length} commit${uniqueCommits.length !== 1 ? 's' : ''}, ${fileCount} file${fileCount !== 1 ? 's' : ''} changed)`;
+  
+  return narrative;
+}
+
+function analyzeCodePatterns(patches, files) {
+  const patterns = {
+    newComponents: false,
+    apiCalls: false,
+    stateManagement: false,
+    styling: false,
+    newEndpoints: false,
+    dataProcessing: false,
+    authentication: false,
+    database: false,
+    newTables: false,
+    migrations: false,
+    relationships: false,
+    docker: false,
+    cicd: false,
+    config: false,
+    unitTests: false,
+    integrationTests: false,
+    coverage: false,
+    purpose: ''
   };
   
-  commits.forEach(commit => {
-    const msg = (commit.commit?.message || commit.message || '').split('\n')[0];
-    const lower = msg.toLowerCase();
-    
-    if (lower.match(/feat|add|implement|support|enable/)) {
-      categories['Features & Enhancements'].push(msg);
-    } else if (lower.match(/fix|bug|crash|error/)) {
-      categories['Bug Fixes'].push(msg);
-    } else if (lower.match(/perf|optim|speed|fast/)) {
-      categories['Performance'].push(msg);
-    } else if (lower.match(/test|ci/)) {
-      categories['Testing'].push(msg);
-    } else if (lower.match(/doc|readme/)) {
-      categories['Documentation'].push(msg);
-    } else if (lower.match(/refactor|clean|remove/)) {
-      categories['Refactoring'].push(msg);
+  const allPatches = patches.join('\n').toLowerCase();
+  
+  // Detect patterns in the code
+  if (allPatches.match(/function.*component|class.*component|export.*component/i)) patterns.newComponents = true;
+  if (allPatches.match(/fetch|axios|api\.|endpoint/)) patterns.apiCalls = true;
+  if (allPatches.match(/usestate|useeffect|setstate|redux|context/)) patterns.stateManagement = true;
+  if (allPatches.match(/style|css|className|styled/)) patterns.styling = true;
+  
+  if (allPatches.match(/@app\.|@post|@get|@put|@delete|router\.|route\(/)) patterns.newEndpoints = true;
+  if (allPatches.match(/validate|sanitize|process|parse|transform/)) patterns.dataProcessing = true;
+  if (allPatches.match(/auth|jwt|token|session|password|login/)) patterns.authentication = true;
+  if (allPatches.match(/query|insert|update|delete|select|findone/)) patterns.database = true;
+  
+  if (allPatches.match(/create.*table|db\.create|collection\./)) patterns.newTables = true;
+  if (allPatches.match(/migration|migrate|alter.*table/)) patterns.migrations = true;
+  if (allPatches.match(/foreign.*key|references|belongsto|hasmany/)) patterns.relationships = true;
+  
+  if (files.some(f => f.filename.match(/dockerfile/i))) patterns.docker = true;
+  if (files.some(f => f.filename.match(/\.github\/workflows|\.yml/))) patterns.cicd = true;
+  if (files.some(f => f.filename.match(/config|\.env/))) patterns.config = true;
+  
+  if (allPatches.match(/test\(|it\(|describe\(/)) patterns.unitTests = true;
+  if (allPatches.match(/request\(|supertest|integration/)) patterns.integrationTests = true;
+  
+  return patterns;
+}
+
+function extractTechnicalDetails(area) {
+  const details = [];
+  const filenames = area.files.map(f => f.filename);
+  
+  // Group by directory
+  const dirs = new Map();
+  filenames.forEach(f => {
+    const parts = f.split('/');
+    if (parts.length > 1) {
+      const dir = parts[0];
+      dirs.set(dir, (dirs.get(dir) || 0) + 1);
     }
   });
   
-  return categories;
+  // Most active directories
+  const topDirs = Array.from(dirs.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  
+  if (topDirs.length > 0) {
+    details.push(`Modified ${topDirs.map(([dir, count]) => `${dir}/ (${count} files)`).join(', ')}`);
+  }
+  
+  // File operations
+  const added = area.files.filter(f => f.status === 'added').length;
+  const modified = area.files.filter(f => f.status === 'modified').length;
+  const removed = area.files.filter(f => f.status === 'removed').length;
+  
+  const ops = [];
+  if (added > 0) ops.push(`${added} new`);
+  if (modified > 0) ops.push(`${modified} modified`);
+  if (removed > 0) ops.push(`${removed} removed`);
+  
+  if (ops.length > 0) {
+    details.push(`Files: ${ops.join(', ')}`);
+  }
+  
+  return details;
 }
 
-function getFileType(filename) {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.py')) return 'Python';
-  if (lower.match(/\.cpp$|\.cu$|\.h$/)) return 'C++/CUDA';
-  if (lower.match(/\.js$|\.ts$/)) return 'JavaScript/TypeScript';
-  if (lower.match(/test/)) return 'tests';
-  if (lower.match(/\.yml$|\.yaml$/)) return 'config';
-  return 'other files';
+function explainCommit(commit) {
+  const explanation = [];
+  
+  // Count file types
+  const fileTypes = {
+    ui: commit.files.filter(f => f.filename.match(/\.(jsx|tsx|vue|css|scss)$/i)),
+    backend: commit.files.filter(f => f.filename.match(/\.(py|java|go|rb|js|ts)$/i) && !f.filename.match(/test/i)),
+    db: commit.files.filter(f => f.filename.match(/model|schema|migration/i)),
+    test: commit.files.filter(f => f.filename.match(/test|spec/i)),
+    config: commit.files.filter(f => f.filename.match(/config|docker|\.yml/i))
+  };
+  
+  if (fileTypes.ui.length > 0) {
+    explanation.push(`Updated ${fileTypes.ui.length} interface file${fileTypes.ui.length > 1 ? 's' : ''}.`);
+  }
+  if (fileTypes.backend.length > 0) {
+    explanation.push(`Modified ${fileTypes.backend.length} backend file${fileTypes.backend.length > 1 ? 's' : ''}.`);
+  }
+  if (fileTypes.db.length > 0) {
+    explanation.push(`Changed database structure (${fileTypes.db.length} file${fileTypes.db.length > 1 ? 's' : ''}).`);
+  }
+  if (fileTypes.test.length > 0) {
+    explanation.push(`Added/updated tests (${fileTypes.test.length} file${fileTypes.test.length > 1 ? 's' : ''}).`);
+  }
+  if (fileTypes.config.length > 0) {
+    explanation.push(`Updated configuration.`);
+  }
+  
+  if (explanation.length === 0) {
+    explanation.push(`Modified ${commit.files.length} file${commit.files.length > 1 ? 's' : ''}.`);
+  }
+  
+  return explanation.join(' ');
 }
+
+function formatDate(date) {
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+}
+
 function analyzeCommitMessages(commits, owner, repo) {
   const insights = {
     features: 0,
