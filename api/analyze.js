@@ -159,15 +159,18 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
-async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 30) {
+async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) {
   if (!recentCommits || recentCommits.length === 0) {
     return { narrative: 'No recent activity to report.' };
   }
   
   try {
+    // Take only the 10 most recent commits for deep analysis
     const commitsToAnalyze = recentCommits.slice(0, Math.min(limit, recentCommits.length));
     
-    // Fetch commit details in parallel
+    console.log(`[NARRATIVE] Analyzing ${commitsToAnalyze.length} recent commits with code diffs`);
+    
+    // Fetch full commit details INCLUDING patches (code diffs)
     const commitDetails = await Promise.allSettled(
       commitsToAnalyze.map(commit => 
         githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commit.sha}`)
@@ -175,238 +178,403 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 30) 
       )
     );
     
-    // Process commits
-    const validCommits = [];
+    // Process commits with their code changes
+    const commitsWithDiffs = [];
     commitDetails.forEach((result) => {
       if (result.status !== 'fulfilled' || !result.value?.files) return;
       
       const commit = result.value;
-      validCommits.push({
+      commitsWithDiffs.push({
         message: commit.commit.message.split('\n')[0],
+        fullMessage: commit.commit.message,
         author: commit.commit.author.name,
         date: new Date(commit.commit.author.date),
         sha: commit.sha.substring(0, 7),
-        filesChanged: commit.files.length,
-        additions: commit.stats.additions,
-        deletions: commit.stats.deletions,
+        url: commit.html_url,
         files: commit.files.map(f => ({
           filename: f.filename,
           status: f.status,
           additions: f.additions || 0,
-          deletions: f.deletions || 0
+          deletions: f.deletions || 0,
+          patch: f.patch || '' // The actual code diff!
         }))
       });
     });
     
-    // Chronological order (oldest first)
-    validCommits.reverse();
+    console.log(`[NARRATIVE] Successfully fetched ${commitsWithDiffs.length} commits with diffs`);
     
-    // Generate narrative
-    const narrative = generateNarrative(validCommits, owner, repo);
+    // Generate narrative by reading the actual code
+    const narrative = writeCodeNarrative(commitsWithDiffs, owner, repo);
     
     return { narrative };
     
   } catch (error) {
     console.error('Error analyzing commits:', error);
-    return { narrative: 'Unable to generate development timeline.' };
+    return { narrative: 'Unable to generate development narrative.' };
   }
 }
 
-function generateNarrative(commits, owner, repo) {
-  if (commits.length === 0) return 'No development activity in the selected time period.';
+function writeCodeNarrative(commits, owner, repo) {
+  if (commits.length === 0) return 'No recent development activity.';
   
-  const lines = [];
+  const story = [];
   
   // Header
-  lines.push(`# Development Story: ${owner}/${repo}`);
-  lines.push('');
+  story.push(`# What the Team Has Been Building`);
+  story.push(`*Based on the last ${commits.length} commits*`);
+  story.push('');
   
-  // Overview stats
-  const oldest = commits[0].date;
-  const newest = commits[commits.length - 1].date;
+  // Date range
+  const newest = commits[0].date;
+  const oldest = commits[commits.length - 1].date;
   const days = Math.ceil((newest - oldest) / (1000 * 60 * 60 * 24));
-  const authors = [...new Set(commits.map(c => c.author))];
   
-  lines.push(`**Period:** ${formatDate(oldest)} to ${formatDate(newest)} (${days} days)`);
-  lines.push(`**Team:** ${authors.length} developer${authors.length > 1 ? 's' : ''} active`);
-  lines.push(`**Activity:** ${commits.length} code updates`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
+  story.push(`**Time Period:** ${formatDate(oldest)} to ${formatDate(newest)} (${days} day${days !== 1 ? 's' : ''})`);
+  story.push('');
+  story.push('---');
+  story.push('');
   
-  // Identify milestones
-  const milestones = findMilestones(commits);
+  // Analyze the code changes and write a narrative
+  story.push('## What the Code Is Doing');
+  story.push('');
   
-  if (milestones.length > 0) {
-    lines.push('## 📍 What Was Built');
-    lines.push('');
+  // Group related changes
+  const workAreas = analyzeWorkAreas(commits);
+  
+  // Write narrative for each area of work
+  for (const [area, details] of Object.entries(workAreas)) {
+    if (details.commits.length === 0) continue;
     
-    milestones.forEach((milestone, idx) => {
-      lines.push(`### ${milestone.icon} ${milestone.title}`);
-      lines.push(`**Completed:** ${formatDate(milestone.date)}`);
-      lines.push('');
-      lines.push(milestone.description);
-      lines.push('');
+    story.push(`### ${area}`);
+    story.push('');
+    story.push(details.narrative);
+    story.push('');
+    
+    if (details.technicalDetails.length > 0) {
+      story.push('**Technical changes:**');
+      details.technicalDetails.forEach(detail => {
+        story.push(`- ${detail}`);
+      });
+      story.push('');
+    }
+  }
+  
+  // Recent commit timeline
+  story.push('---');
+  story.push('');
+  story.push('## Recent Commit Timeline');
+  story.push('');
+  
+  commits.slice(0, 5).forEach((commit, idx) => {
+    story.push(`**${idx + 1}. ${commit.message}**`);
+    story.push(`*${formatDate(commit.date)} by ${commit.author}*`);
+    story.push('');
+    
+    // Write what this commit actually does
+    const explanation = explainCommit(commit);
+    story.push(explanation);
+    story.push('');
+  });
+  
+  return story.join('\n');
+}
+
+function analyzeWorkAreas(commits) {
+  const areas = {
+    'User Interface': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Backend Services': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Database & Data': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Infrastructure & Configuration': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    },
+    'Testing & Quality': {
+      commits: [],
+      files: [],
+      patches: [],
+      narrative: '',
+      technicalDetails: []
+    }
+  };
+  
+  // Categorize commits
+  commits.forEach(commit => {
+    commit.files.forEach(file => {
+      const f = file.filename.toLowerCase();
       
-      if (milestone.impact && milestone.impact.length > 0) {
-        lines.push('**Business Impact:**');
-        milestone.impact.forEach(item => lines.push(`- ${item}`));
-        lines.push('');
+      // UI/Frontend
+      if (f.match(/component|view|page|\.jsx|\.tsx|\.vue|\.css|\.scss/)) {
+        areas['User Interface'].commits.push(commit);
+        areas['User Interface'].files.push(file);
+        areas['User Interface'].patches.push(file.patch);
+      }
+      // Backend
+      else if (f.match(/api|endpoint|route|controller|service|\.py|\.java|\.go|\.rb/)) {
+        areas['Backend Services'].commits.push(commit);
+        areas['Backend Services'].files.push(file);
+        areas['Backend Services'].patches.push(file.patch);
+      }
+      // Database
+      else if (f.match(/model|schema|migration|database|db/)) {
+        areas['Database & Data'].commits.push(commit);
+        areas['Database & Data'].files.push(file);
+        areas['Database & Data'].patches.push(file.patch);
+      }
+      // Infrastructure
+      else if (f.match(/docker|\.yml|\.yaml|config|deploy|ci|cd/)) {
+        areas['Infrastructure & Configuration'].commits.push(commit);
+        areas['Infrastructure & Configuration'].files.push(file);
+        areas['Infrastructure & Configuration'].patches.push(file.patch);
+      }
+      // Testing
+      else if (f.match(/test|spec|\.test\.|\.spec\./)) {
+        areas['Testing & Quality'].commits.push(commit);
+        areas['Testing & Quality'].files.push(file);
+        areas['Testing & Quality'].patches.push(file.patch);
       }
     });
+  });
+  
+  // Generate narratives for each area by reading the code
+  for (const [areaName, area] of Object.entries(areas)) {
+    if (area.commits.length === 0) continue;
     
-    lines.push('---');
-    lines.push('');
+    area.narrative = generateAreaNarrative(areaName, area);
+    area.technicalDetails = extractTechnicalDetails(area);
   }
   
-  // Recent activity
-  lines.push('## 📊 Recent Work');
-  lines.push('');
-  
-  const recent = commits.slice(-10);
-  const activity = categorizeActivity(recent);
-  
-  lines.push('**The team has been focused on:**');
-  lines.push('');
-  
-  if (activity.features > 0) {
-    lines.push(`✨ **New capabilities:** ${activity.features} feature updates`);
-  }
-  if (activity.fixes > 0) {
-    lines.push(`🔧 **Stability:** ${activity.fixes} bug fixes and improvements`);
-  }
-  if (activity.quality > 0) {
-    lines.push(`✅ **Quality:** ${activity.quality} updates with testing and documentation`);
-  }
-  
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-  
-  // Team summary
-  lines.push('## 👥 Team Contributions');
-  lines.push('');
-  
-  const authorWork = new Map();
-  commits.forEach(c => {
-    if (!authorWork.has(c.author)) {
-      authorWork.set(c.author, { commits: 0, lines: 0 });
-    }
-    const work = authorWork.get(c.author);
-    work.commits++;
-    work.lines += c.additions + c.deletions;
-  });
-  
-  const topContributors = Array.from(authorWork.entries())
-    .sort((a, b) => b[1].commits - a[1].commits)
-    .slice(0, 5);
-  
-  topContributors.forEach(([author, work]) => {
-    lines.push(`**${author}:** ${work.commits} updates, ${work.lines.toLocaleString()} lines changed`);
-  });
-  
-  return lines.join('\n');
+  return areas;
 }
 
-function findMilestones(commits) {
-  const milestones = [];
-  let featureInProgress = null;
-  let featureCommits = [];
+function generateAreaNarrative(areaName, area) {
+  const uniqueCommits = [...new Set(area.commits.map(c => c.sha))];
+  const fileCount = area.files.length;
   
-  commits.forEach((commit) => {
-    const msg = commit.message.toLowerCase();
-    const isLargeChange = commit.additions > 100 || commit.filesChanged > 5;
+  let narrative = '';
+  
+  // Analyze what the code is doing based on patches
+  const codePatterns = analyzeCodePatterns(area.patches, area.files);
+  
+  if (areaName === 'User Interface') {
+    narrative = `The team has been updating the user interface. `;
     
-    // Detect feature starts
-    if ((msg.includes('add') || msg.includes('implement') || msg.includes('create')) && isLargeChange) {
-      featureInProgress = {
-        title: cleanFeatureName(commit.message),
-        date: commit.date,
-        icon: '🎯',
-        description: '',
-        impact: [],
-        commits: [commit]
-      };
-      featureCommits = [commit];
+    if (codePatterns.newComponents) {
+      narrative += `They've created new interface components that ${codePatterns.purpose || 'enhance the user experience'}. `;
     }
-    // Detect completions
-    else if (featureInProgress && (msg.includes('complete') || msg.includes('finish') || msg.includes('test'))) {
-      featureCommits.push(commit);
-      
-      const totalFiles = new Set();
-      let totalLines = 0;
-      featureCommits.forEach(c => {
-        c.files.forEach(f => totalFiles.add(f.filename));
-        totalLines += c.additions;
-      });
-      
-      featureInProgress.description = `Team completed ${featureInProgress.title.toLowerCase()} over ${featureCommits.length} updates spanning ${Math.ceil((commit.date - featureInProgress.date) / (1000 * 60 * 60 * 24))} days.`;
-      
-      // Categorize impact
-      const files = Array.from(totalFiles);
-      const hasUI = files.some(f => f.match(/component|page|view|\.jsx|\.tsx|\.vue/i));
-      const hasAPI = files.some(f => f.match(/api|endpoint|route|controller/i));
-      const hasDB = files.some(f => f.match(/model|schema|migration/i));
-      const hasTests = files.some(f => f.match(/test|spec/i));
-      
-      if (hasUI) featureInProgress.impact.push('New user-facing functionality available');
-      if (hasAPI) featureInProgress.impact.push('Backend services updated to support new features');
-      if (hasDB) featureInProgress.impact.push('Data infrastructure expanded for new capabilities');
-      if (hasTests) featureInProgress.impact.push('Quality assurance in place to ensure reliability');
-      
-      featureInProgress.impact.push(`${totalLines.toLocaleString()} lines of new code`);
-      
-      milestones.push(featureInProgress);
-      featureInProgress = null;
-      featureCommits = [];
+    if (codePatterns.apiCalls) {
+      narrative += `These components connect to backend services to fetch and display data. `;
     }
-    // Track ongoing work
-    else if (featureInProgress) {
-      featureCommits.push(commit);
+    if (codePatterns.stateManagement) {
+      narrative += `The code manages user interactions and keeps the interface responsive. `;
     }
-    // Standalone important changes
-    else if (msg.includes('refactor') && isLargeChange) {
-      milestones.push({
-        title: 'Code Quality Improvement',
-        date: commit.date,
-        icon: '🔧',
-        description: `Team improved code quality across ${commit.filesChanged} files.`,
-        impact: [
-          'Makes codebase easier to maintain and update',
-          'Reduces technical debt',
-          'Enables faster future development'
-        ]
-      });
+    if (codePatterns.styling) {
+      narrative += `Visual styling has been updated to improve the look and feel. `;
     }
-    else if (msg.includes('fix') && commit.filesChanged <= 3) {
-      // Don't create milestone for small bug fixes
+  }
+  else if (areaName === 'Backend Services') {
+    narrative = `The backend infrastructure is being enhanced. `;
+    
+    if (codePatterns.newEndpoints) {
+      narrative += `New API endpoints have been added to handle ${codePatterns.purpose || 'additional functionality'}. `;
     }
-  });
+    if (codePatterns.dataProcessing) {
+      narrative += `The code processes incoming requests, validates data, and performs business logic. `;
+    }
+    if (codePatterns.authentication) {
+      narrative += `Security measures including authentication and authorization are being implemented. `;
+    }
+    if (codePatterns.database) {
+      narrative += `These services interact with the database to store and retrieve information. `;
+    }
+  }
+  else if (areaName === 'Database & Data') {
+    narrative = `Data structures are being modified. `;
+    
+    if (codePatterns.newTables) {
+      narrative += `New database tables or collections are being created to store ${codePatterns.purpose || 'application data'}. `;
+    }
+    if (codePatterns.migrations) {
+      narrative += `Database migrations ensure existing data is preserved while the structure evolves. `;
+    }
+    if (codePatterns.relationships) {
+      narrative += `Relationships between different data entities are being established. `;
+    }
+  }
+  else if (areaName === 'Infrastructure & Configuration') {
+    narrative = `The deployment and infrastructure setup is being refined. `;
+    
+    if (codePatterns.docker) {
+      narrative += `Container configurations ensure the application runs consistently across different environments. `;
+    }
+    if (codePatterns.cicd) {
+      narrative += `Automated testing and deployment pipelines are being configured. `;
+    }
+    if (codePatterns.config) {
+      narrative += `Environment settings and configuration files are being updated. `;
+    }
+  }
+  else if (areaName === 'Testing & Quality') {
+    narrative = `Quality assurance is being strengthened. `;
+    
+    if (codePatterns.unitTests) {
+      narrative += `New tests verify that individual components work correctly. `;
+    }
+    if (codePatterns.integrationTests) {
+      narrative += `Integration tests ensure different parts of the system work together properly. `;
+    }
+    if (codePatterns.coverage) {
+      narrative += `Test coverage is being expanded to catch potential issues early. `;
+    }
+  }
   
-  return milestones;
+  narrative += `(${uniqueCommits.length} commit${uniqueCommits.length !== 1 ? 's' : ''}, ${fileCount} file${fileCount !== 1 ? 's' : ''} changed)`;
+  
+  return narrative;
 }
 
-function categorizeActivity(commits) {
-  return {
-    features: commits.filter(c => c.message.toLowerCase().match(/add|implement|create|new/) && c.additions > 30).length,
-    fixes: commits.filter(c => c.message.toLowerCase().includes('fix')).length,
-    quality: commits.filter(c => c.files.some(f => f.filename.match(/test|spec|doc/i))).length
+function analyzeCodePatterns(patches, files) {
+  const patterns = {
+    newComponents: false,
+    apiCalls: false,
+    stateManagement: false,
+    styling: false,
+    newEndpoints: false,
+    dataProcessing: false,
+    authentication: false,
+    database: false,
+    newTables: false,
+    migrations: false,
+    relationships: false,
+    docker: false,
+    cicd: false,
+    config: false,
+    unitTests: false,
+    integrationTests: false,
+    coverage: false,
+    purpose: ''
   };
+  
+  const allPatches = patches.join('\n').toLowerCase();
+  
+  // Detect patterns in the code
+  if (allPatches.match(/function.*component|class.*component|export.*component/i)) patterns.newComponents = true;
+  if (allPatches.match(/fetch|axios|api\.|endpoint/)) patterns.apiCalls = true;
+  if (allPatches.match(/usestate|useeffect|setstate|redux|context/)) patterns.stateManagement = true;
+  if (allPatches.match(/style|css|className|styled/)) patterns.styling = true;
+  
+  if (allPatches.match(/@app\.|@post|@get|@put|@delete|router\.|route\(/)) patterns.newEndpoints = true;
+  if (allPatches.match(/validate|sanitize|process|parse|transform/)) patterns.dataProcessing = true;
+  if (allPatches.match(/auth|jwt|token|session|password|login/)) patterns.authentication = true;
+  if (allPatches.match(/query|insert|update|delete|select|findone/)) patterns.database = true;
+  
+  if (allPatches.match(/create.*table|db\.create|collection\./)) patterns.newTables = true;
+  if (allPatches.match(/migration|migrate|alter.*table/)) patterns.migrations = true;
+  if (allPatches.match(/foreign.*key|references|belongsto|hasmany/)) patterns.relationships = true;
+  
+  if (files.some(f => f.filename.match(/dockerfile/i))) patterns.docker = true;
+  if (files.some(f => f.filename.match(/\.github\/workflows|\.yml/))) patterns.cicd = true;
+  if (files.some(f => f.filename.match(/config|\.env/))) patterns.config = true;
+  
+  if (allPatches.match(/test\(|it\(|describe\(/)) patterns.unitTests = true;
+  if (allPatches.match(/request\(|supertest|integration/)) patterns.integrationTests = true;
+  
+  return patterns;
 }
 
-function cleanFeatureName(message) {
-  let name = message
-    .replace(/^(feat|feature|add|implement|create|new)[\(\:]?\s*/i, '')
-    .replace(/^\[.*?\]\s*/, '')
-    .trim();
+function extractTechnicalDetails(area) {
+  const details = [];
+  const filenames = area.files.map(f => f.filename);
   
-  name = name.charAt(0).toUpperCase() + name.slice(1);
+  // Group by directory
+  const dirs = new Map();
+  filenames.forEach(f => {
+    const parts = f.split('/');
+    if (parts.length > 1) {
+      const dir = parts[0];
+      dirs.set(dir, (dirs.get(dir) || 0) + 1);
+    }
+  });
   
-  if (name.length > 60) {
-    name = name.substring(0, 57) + '...';
+  // Most active directories
+  const topDirs = Array.from(dirs.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  
+  if (topDirs.length > 0) {
+    details.push(`Modified ${topDirs.map(([dir, count]) => `${dir}/ (${count} files)`).join(', ')}`);
   }
   
-  return name || 'New Feature';
+  // File operations
+  const added = area.files.filter(f => f.status === 'added').length;
+  const modified = area.files.filter(f => f.status === 'modified').length;
+  const removed = area.files.filter(f => f.status === 'removed').length;
+  
+  const ops = [];
+  if (added > 0) ops.push(`${added} new`);
+  if (modified > 0) ops.push(`${modified} modified`);
+  if (removed > 0) ops.push(`${removed} removed`);
+  
+  if (ops.length > 0) {
+    details.push(`Files: ${ops.join(', ')}`);
+  }
+  
+  return details;
+}
+
+function explainCommit(commit) {
+  const explanation = [];
+  
+  // Count file types
+  const fileTypes = {
+    ui: commit.files.filter(f => f.filename.match(/\.(jsx|tsx|vue|css|scss)$/i)),
+    backend: commit.files.filter(f => f.filename.match(/\.(py|java|go|rb|js|ts)$/i) && !f.filename.match(/test/i)),
+    db: commit.files.filter(f => f.filename.match(/model|schema|migration/i)),
+    test: commit.files.filter(f => f.filename.match(/test|spec/i)),
+    config: commit.files.filter(f => f.filename.match(/config|docker|\.yml/i))
+  };
+  
+  if (fileTypes.ui.length > 0) {
+    explanation.push(`Updated ${fileTypes.ui.length} interface file${fileTypes.ui.length > 1 ? 's' : ''}.`);
+  }
+  if (fileTypes.backend.length > 0) {
+    explanation.push(`Modified ${fileTypes.backend.length} backend file${fileTypes.backend.length > 1 ? 's' : ''}.`);
+  }
+  if (fileTypes.db.length > 0) {
+    explanation.push(`Changed database structure (${fileTypes.db.length} file${fileTypes.db.length > 1 ? 's' : ''}).`);
+  }
+  if (fileTypes.test.length > 0) {
+    explanation.push(`Added/updated tests (${fileTypes.test.length} file${fileTypes.test.length > 1 ? 's' : ''}).`);
+  }
+  if (fileTypes.config.length > 0) {
+    explanation.push(`Updated configuration.`);
+  }
+  
+  if (explanation.length === 0) {
+    explanation.push(`Modified ${commit.files.length} file${commit.files.length > 1 ? 's' : ''}.`);
+  }
+  
+  return explanation.join(' ');
 }
 
 function formatDate(date) {
@@ -416,6 +584,7 @@ function formatDate(date) {
     year: 'numeric' 
   });
 }
+
 function analyzeCommitMessages(commits, owner, repo) {
   const insights = {
     features: 0,
@@ -756,6 +925,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   allCommits = Array.from(commitMap.values()).map(item => ({ ...item.commit, branches: item.branches }));
   allCommits.sort((a, b) => new Date(b.commit.author.date) - new Date(a.commit.author.date));
   
+  console.log(`[DEBUG] Time range: ${timeRange}, sinceDate: ${sinceDate}`);
+  console.log(`[DEBUG] Total commits fetched: ${allCommits.length}`);
+  console.log(`[DEBUG] First commit date: ${allCommits[0]?.commit?.author?.date}`);
+  
   if (!activeBranches.find(b => b.name === primaryBranch)) {
     const primaryBranchObj = branches.find(b => b.name === primaryBranch);
     if (primaryBranchObj) activeBranches.push(primaryBranchObj);
@@ -821,22 +994,28 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const cicdTools = await detectCICDTools(owner, repo);
   
   // Generate management narrative from code changes
-  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 30);
+  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 10);
   
   // Build summary
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
   const commitCount = allCommits.length;
   const devCount = contributors.size;
   
-  let summary = `${commitCount} commits from ${devCount} ${devCount === 1 ? "developer" : "developers"} this ${timeLabel}.`;
+  let summary = "";
   
-  if (mergedPRsInRange.length > 0) {
-    summary += ` ${mergedPRsInRange.length} PRs merged.`;
-  }
-  
-  // Add narrative timeline
-  if (codeChanges.narrative) {
-    summary += '\n\n' + codeChanges.narrative;
+  if (commitCount === 0) {
+    summary = `No commits found in this time period (${timeLabel}).\n\nThis repository may not have had any activity during this time range, or the selected branch may not have recent commits. Try selecting a different time range or check if there are commits on other branches.`;
+  } else {
+    summary = `${commitCount} commits from ${devCount} ${devCount === 1 ? "developer" : "developers"} this ${timeLabel}.`;
+    
+    if (mergedPRsInRange.length > 0) {
+      summary += ` ${mergedPRsInRange.length} PRs merged.`;
+    }
+    
+    // Add narrative timeline
+    if (codeChanges.narrative) {
+      summary += '\n\n' + codeChanges.narrative;
+    }
   }
   
   return {
