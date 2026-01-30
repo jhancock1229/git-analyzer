@@ -200,7 +200,8 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
         filesChanged: commit.files.length,
         additions: commit.stats.additions,
         deletions: commit.stats.deletions,
-        fileDetails: []
+        fileDetails: [],
+        interpretation: '' // AI interpretation of what this commit is actually doing
       };
       
       // Analyze each file in the commit
@@ -211,6 +212,7 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
         const status = file.status; // 'added', 'removed', 'modified', 'renamed'
         const additions = file.additions || 0;
         const deletions = file.deletions || 0;
+        const patch = file.patch || '';
         
         commitAnalysis.fileDetails.push({
           filename,
@@ -219,9 +221,15 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
           status,
           additions,
           deletions,
-          changes: additions + deletions
+          changes: additions + deletions,
+          patch
         });
       });
+      
+      // Generate intelligent interpretation for the MOST RECENT commit only
+      if (idx === 0) {
+        commitAnalysis.interpretation = interpretCodeChanges(commitAnalysis);
+      }
       
       analysis.commits.push(commitAnalysis);
     });
@@ -238,6 +246,12 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
     const totalDeletions = analysis.commits.reduce((sum, c) => sum + c.deletions, 0);
     
     summaryParts.push(`Total impact: ${totalFiles} files changed, +${totalAdditions}/-${totalDeletions} lines.`);
+    
+    // MOST RECENT COMMIT - Detailed interpretation
+    if (analysis.commits.length > 0 && analysis.commits[0].interpretation) {
+      summaryParts.push('\n\n**Most Recent Commit - Detailed Analysis:**');
+      summaryParts.push(analysis.commits[0].interpretation);
+    }
     
     // Detailed breakdown of recent work
     if (analysis.commits.length > 0) {
@@ -319,6 +333,138 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
   }
   
   return analysis;
+}
+
+function interpretCodeChanges(commitAnalysis) {
+  // Intelligent interpretation of what the code changes are actually doing
+  const files = commitAnalysis.fileDetails;
+  const interpretation = [];
+  
+  interpretation.push(`**Commit:** ${commitAnalysis.message}`);
+  interpretation.push(`**Author:** ${commitAnalysis.author}`);
+  interpretation.push(`**Files Changed:** ${commitAnalysis.filesChanged} files (+${commitAnalysis.additions}/-${commitAnalysis.deletions} lines)`);
+  interpretation.push('');
+  interpretation.push('**What This Code Is Actually Doing:**');
+  interpretation.push('');
+  
+  // Analyze file types and patterns
+  const filesByType = {
+    frontend: files.filter(f => f.filename.match(/\.(jsx?|tsx?|vue|svelte)$/i)),
+    backend: files.filter(f => f.filename.match(/\.(py|java|go|rb|php|rs)$/i) && !f.filename.match(/test/i)),
+    api: files.filter(f => f.filename.match(/api|endpoint|route|controller/i)),
+    database: files.filter(f => f.filename.match(/model|schema|migration|db/i)),
+    tests: files.filter(f => f.filename.match(/test|spec/i)),
+    config: files.filter(f => f.filename.match(/config|\.env|docker|package\.json|requirements\.txt/i)),
+    styles: files.filter(f => f.filename.match(/\.(css|scss|sass|less)$/i)),
+    docs: files.filter(f => f.filename.match(/\.(md|txt|rst)$/i) || f.filename.match(/readme|docs/i))
+  };
+  
+  // Determine primary activity
+  const newFiles = files.filter(f => f.status === 'added');
+  const deletedFiles = files.filter(f => f.status === 'removed');
+  const modifiedFiles = files.filter(f => f.status === 'modified');
+  
+  // INTERPRETATION LOGIC
+  
+  // 1. New feature detection
+  if (newFiles.length > 3 && commitAnalysis.additions > 200) {
+    interpretation.push('🎯 **Building a new feature:**');
+    if (filesByType.frontend.length > 0) {
+      interpretation.push(`   - Created ${filesByType.frontend.length} new UI component${filesByType.frontend.length > 1 ? 's' : ''}`);
+      filesByType.frontend.slice(0, 3).forEach(f => {
+        interpretation.push(`     • ${f.filename}`);
+      });
+    }
+    if (filesByType.api.length > 0) {
+      interpretation.push(`   - Added ${filesByType.api.length} new API endpoint${filesByType.api.length > 1 ? 's' : ''} or route${filesByType.api.length > 1 ? 's' : ''}`);
+    }
+    if (filesByType.database.length > 0) {
+      interpretation.push(`   - Created database models/schemas for data persistence`);
+    }
+  }
+  
+  // 2. Refactoring detection
+  else if (commitAnalysis.deletions > commitAnalysis.additions * 0.7 && modifiedFiles.length > 5) {
+    interpretation.push('🔧 **Refactoring existing code:**');
+    interpretation.push(`   - Restructured ${modifiedFiles.length} files`);
+    interpretation.push(`   - Net reduction of ${commitAnalysis.deletions - commitAnalysis.additions} lines (code cleanup)`);
+    const mainDirs = [...new Set(files.map(f => f.directory))];
+    interpretation.push(`   - Affected areas: ${mainDirs.slice(0, 3).join(', ')}`);
+  }
+  
+  // 3. Bug fix detection
+  else if (commitMessage.match(/fix|bug|issue|patch/i) || (modifiedFiles.length <= 3 && commitAnalysis.additions < 100)) {
+    interpretation.push('🐛 **Fixing a bug:**');
+    interpretation.push(`   - Modified ${modifiedFiles.length} file${modifiedFiles.length > 1 ? 's' : ''} with targeted changes`);
+    modifiedFiles.forEach(f => {
+      interpretation.push(`     • ${f.filename} (+${f.additions}/-${f.deletions})`);
+    });
+    if (filesByType.tests.length > 0) {
+      interpretation.push(`   - Added/updated tests to prevent regression`);
+    }
+  }
+  
+  // 4. API/Backend work
+  else if (filesByType.backend.length > 0 || filesByType.api.length > 0) {
+    interpretation.push('⚙️ **Backend/API development:**');
+    if (filesByType.api.length > 0) {
+      interpretation.push(`   - Working on API layer (${filesByType.api.length} files)`);
+    }
+    if (filesByType.database.length > 0) {
+      interpretation.push(`   - Database changes: ${filesByType.database.map(f => f.filename).join(', ')}`);
+    }
+    if (filesByType.backend.length > 0) {
+      const mainBackendFile = filesByType.backend[0];
+      interpretation.push(`   - Business logic in: ${mainBackendFile.filename}`);
+    }
+  }
+  
+  // 5. Frontend/UI work
+  else if (filesByType.frontend.length > 0) {
+    interpretation.push('🎨 **Frontend/UI work:**');
+    interpretation.push(`   - Modified ${filesByType.frontend.length} component${filesByType.frontend.length > 1 ? 's' : ''}`);
+    filesByType.frontend.forEach(f => {
+      interpretation.push(`     • ${f.filename}`);
+    });
+    if (filesByType.styles.length > 0) {
+      interpretation.push(`   - Updated styling (${filesByType.styles.length} style file${filesByType.styles.length > 1 ? 's' : ''})`);
+    }
+  }
+  
+  // 6. Configuration changes
+  else if (filesByType.config.length > 0) {
+    interpretation.push('⚙️ **Configuration/infrastructure changes:**');
+    filesByType.config.forEach(f => {
+      interpretation.push(`   - ${f.filename}`);
+      if (f.filename.match(/docker/i)) interpretation.push(`     (Container configuration)`);
+      if (f.filename.match(/package\.json/i)) interpretation.push(`     (Dependencies updated)`);
+      if (f.filename.match(/\.env/i)) interpretation.push(`     (Environment configuration)`);
+    });
+  }
+  
+  // 7. Testing
+  if (filesByType.tests.length > 0) {
+    interpretation.push('');
+    interpretation.push(`✅ **Testing:** ${filesByType.tests.length} test file${filesByType.tests.length > 1 ? 's' : ''} ${newFiles.some(f => filesByType.tests.includes(f)) ? 'added' : 'updated'}`);
+  }
+  
+  // 8. Documentation
+  if (filesByType.docs.length > 0) {
+    interpretation.push('');
+    interpretation.push(`📚 **Documentation:** Updated ${filesByType.docs.map(f => f.filename).join(', ')}`);
+  }
+  
+  // Add specific file details if small commit
+  if (files.length <= 5) {
+    interpretation.push('');
+    interpretation.push('**Files modified:**');
+    files.forEach(f => {
+      const statusIcon = f.status === 'added' ? '➕' : f.status === 'removed' ? '➖' : '✏️';
+      interpretation.push(`   ${statusIcon} ${f.filename} (+${f.additions}/-${f.deletions})`);
+    });
+  }
+  
+  return interpretation.join('\n');
 }
 
 function analyzeCommitMessages(commits, owner, repo) {
