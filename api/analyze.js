@@ -707,6 +707,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Fetch primary branch first (most important, gets more data)
   const primaryBranchObj = branches.find(b => b.name === primaryBranch);
   if (primaryBranchObj) {
+    console.log(`[DEBUG] Fetching commits from primary branch: ${primaryBranch}`);
     let branchPage = 1;
     while (branchPage <= 5) { // Primary gets 5 pages (500 commits max in time range)
       const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
@@ -714,10 +715,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
       // CRITICAL: Add since parameter for date filtering on server side
       if (sinceDate) {
         params.since = sinceDate;
+        console.log(`[DEBUG] Using since filter: ${sinceDate}`);
       }
       
       try {
+        console.log(`[DEBUG] Fetching page ${branchPage} from ${primaryBranch}...`);
         const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
+        console.log(`[DEBUG] Got ${commits.length} commits on page ${branchPage}`);
+        
         if (commits.length === 0) break;
         
         for (const commit of commits) {
@@ -741,9 +746,13 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
         if (commits.length < 100) break;
         branchPage++;
       } catch (error) {
+        console.log(`[DEBUG] Error fetching commits: ${error.message}`);
         break;
       }
     }
+    console.log(`[DEBUG] Finished fetching primary branch. Total in map: ${commitMap.size}`);
+  } else {
+    console.log(`[DEBUG] WARNING: Could not find primary branch object for: ${primaryBranch}`);
   }
   
   // Fetch other branches (with time filter for efficiency)
@@ -787,9 +796,19 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   allCommits = Array.from(commitMap.values()).map(item => ({ ...item.commit, branches: item.branches }));
   allCommits.sort((a, b) => new Date(b.commit.author.date) - new Date(a.commit.author.date));
   
+  console.log(`[DEBUG] ==========================================`);
   console.log(`[DEBUG] Time range: ${timeRange}, sinceDate: ${sinceDate}`);
   console.log(`[DEBUG] Total commits fetched: ${allCommits.length}`);
-  console.log(`[DEBUG] First commit date: ${allCommits[0]?.commit?.author?.date}`);
+  console.log(`[DEBUG] Contributors: ${contributors.size}`);
+  if (allCommits.length > 0) {
+    console.log(`[DEBUG] First commit: ${allCommits[0].commit.message.split('\n')[0]}`);
+    console.log(`[DEBUG] First commit date: ${allCommits[0].commit.author.date}`);
+  } else {
+    console.log(`[DEBUG] NO COMMITS FOUND!`);
+    console.log(`[DEBUG] Branches checked: ${branches.length}`);
+    console.log(`[DEBUG] Primary branch: ${primaryBranch}`);
+  }
+  console.log(`[DEBUG] ==========================================`);
   
   if (!activeBranches.find(b => b.name === primaryBranch)) {
     const primaryBranchObj = branches.find(b => b.name === primaryBranch);
