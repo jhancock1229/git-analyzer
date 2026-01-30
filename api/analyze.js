@@ -506,7 +506,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
       subject: commit.commit.message.split('\n')[0].substring(0, 50),
       parents: (commit.parents || []).map(p => p.sha.substring(0, 7)),
       branches: commit.branches || [primaryBranch],
-      isMerge: commit.parents && commit.parents.length > 1
+      isMerge: commit.parents && commit.parents.length > 1,
+      commit: commit.commit // Add full commit object for analysis
     });
   }
   
@@ -523,8 +524,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const cicdTools = await detectCICDTools(owner, repo);
   const prInsights = analyzePRActivity(mergedPRsInRange);
   
-  // Analyze commit messages for detailed insights
-  const commitInsights = analyzeCommitMessages(allCommits, owner, repo);
+  // Analyze commit messages for detailed insights (use graphNodes which have proper structure)
+  const commitInsights = analyzeCommitMessages(graphNodes, owner, repo);
   
   // Build rich, detailed conversational summary
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '');
