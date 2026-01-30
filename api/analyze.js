@@ -851,23 +851,28 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const primaryBranchObj = branches.find(b => b.name === primaryBranch);
   if (primaryBranchObj) {
     let branchPage = 1;
-    while (branchPage <= 3) { // Primary gets 3 pages (300 commits)
+    while (branchPage <= 5) { // Primary gets 5 pages (500 commits max in time range)
       const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
+      
+      // CRITICAL: Add since parameter for date filtering on server side
+      if (sinceDate) {
+        params.since = sinceDate;
+      }
+      
       try {
         const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
         if (commits.length === 0) break;
         
         for (const commit of commits) {
           const commitDate = new Date(commit.commit.author.date);
-          const includeCommit = !sinceDate || commitDate >= new Date(sinceDate);
           
-          if (includeCommit && !commitMap.has(commit.sha)) {
+          if (!commitMap.has(commit.sha)) {
             commitMap.set(commit.sha, { commit, branches: [primaryBranchObj.name] });
             branchCommitCounts.set(primaryBranchObj.name, (branchCommitCounts.get(primaryBranchObj.name) || 0) + 1);
             if (!branchLastSeen.has(primaryBranchObj.name) || commitDate > branchLastSeen.get(primaryBranchObj.name)) {
               branchLastSeen.set(primaryBranchObj.name, commitDate);
             }
-          } else if (includeCommit) {
+          } else {
             commitMap.get(commit.sha).branches.push(primaryBranchObj.name);
           }
         }
