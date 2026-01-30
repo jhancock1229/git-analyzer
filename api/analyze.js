@@ -697,22 +697,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   }
   
   return {
-    contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
+    // Essential stats
     totalCommits: allCommits.length,
     timeRange: getTimeRangeLabel(timeRange),
     primaryBranch,
-    primaryBranchUrl: `https://github.com/${owner}/${repo}/tree/${primaryBranch}`,
-    totalBranches: activeBranches.length,
-    staleBranchesCount: staleBranches.length,
-    allBranchesCount: branches.length,
-    merges,
-    branches: activeBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, commitCount: branchCommitCounts.get(b.name) || 0, isStale: false })),
-    staleBranches: staleBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, lastCommit: b.lastCommit, daysSinceLastCommit: b.daysSinceLastCommit, isStale: true })),
-    timeline: [],
-    graph: graphNodes,
-    branchingAnalysis,
-    activitySummary: summary,
-    cicdTools
+    contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits).slice(0, 10),
+    
+    // The summary - most important part
+    activitySummary: summary
   };
 }
 
