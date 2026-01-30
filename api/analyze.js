@@ -159,6 +159,111 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
+async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 20) {
+  const analysis = {
+    languages: new Map(),
+    directories: new Map(),
+    changeTypes: { newFiles: 0, modifiedFiles: 0, deletedFiles: 0 },
+    largeChanges: [],
+    patterns: [],
+    summary: ''
+  };
+  
+  if (!recentCommits || recentCommits.length === 0) return analysis;
+  
+  try {
+    const commitsToAnalyze = recentCommits.slice(0, Math.min(limit, recentCommits.length));
+    
+    const commitDetails = await Promise.allSettled(
+      commitsToAnalyze.map(commit => 
+        githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commit.sha}`)
+          .catch(() => null)
+      )
+    );
+    
+    commitDetails.forEach(result => {
+      if (result.status !== 'fulfilled' || !result.value?.files) return;
+      
+      const commit = result.value;
+      commit.files.forEach(file => {
+        const filename = file.filename;
+        const status = file.status;
+        const changes = (file.additions || 0) + (file.deletions || 0);
+        
+        if (status === 'added') analysis.changeTypes.newFiles++;
+        else if (status === 'removed') analysis.changeTypes.deletedFiles++;
+        else if (status === 'modified') analysis.changeTypes.modifiedFiles++;
+        
+        const ext = filename.split('.').pop().toLowerCase();
+        if (ext && ext.length < 6) {
+          analysis.languages.set(ext, (analysis.languages.get(ext) || 0) + changes);
+        }
+        
+        const parts = filename.split('/');
+        if (parts.length > 1) {
+          analysis.directories.set(parts[0], (analysis.directories.get(parts[0]) || 0) + changes);
+        }
+        
+        if (changes > 100) {
+          analysis.largeChanges.push({
+            file: filename,
+            changes,
+            message: commit.commit.message.split('\n')[0]
+          });
+        }
+        
+        if (filename.match(/test|spec/i)) analysis.patterns.push('testing');
+        if (filename.match(/api|endpoint/i)) analysis.patterns.push('api');
+        if (filename.match(/component|view/i)) analysis.patterns.push('ui');
+        if (filename.match(/model|schema/i)) analysis.patterns.push('data');
+      });
+    });
+    
+    const summaryParts = [];
+    
+    const langMap = {
+      js: 'JavaScript', jsx: 'React', ts: 'TypeScript', tsx: 'React', py: 'Python',
+      java: 'Java', rb: 'Ruby', go: 'Go', css: 'styling', html: 'markup'
+    };
+    
+    const topLangs = Array.from(analysis.languages.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([l]) => langMap[l] || l);
+    
+    if (topLangs.length > 0) {
+      summaryParts.push(`Recent work in ${topLangs.join(', ')}`);
+    }
+    
+    const topDirs = Array.from(analysis.directories.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([d]) => d);
+    
+    if (topDirs.length > 0) {
+      summaryParts.push(`focused on: ${topDirs.join(', ')}`);
+    }
+    
+    const patterns = [...new Set(analysis.patterns)];
+    if (patterns.length > 0) {
+      const pMap = { testing: 'tests', api: 'API', ui: 'UI', data: 'data models' };
+      summaryParts.push(`including ${patterns.slice(0, 3).map(p => pMap[p] || p).join(', ')}`);
+    }
+    
+    if (analysis.largeChanges.length > 0) {
+      const top = analysis.largeChanges[0];
+      summaryParts.push(`Major change: ${top.message}`);
+    }
+    
+    analysis.summary = summaryParts.join(', ') + '.';
+    
+  } catch (error) {
+    analysis.summary = '';
+  }
+  
+  return analysis;
+}
+
 function analyzeCommitMessages(commits, owner, repo) {
   const insights = {
     features: 0,
@@ -563,8 +668,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   const cicdTools = await detectCICDTools(owner, repo);
   
+  // Analyze actual code changes (not just commit messages)
+  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 15);
   
-  // Simple summary
+  // Build rich summary with actual code insights
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
   const commitCount = allCommits.length;
   const devCount = contributors.size;
@@ -583,7 +690,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   if (mergedPRsInRange.length > 0) {
     summary += ` ${mergedPRsInRange.length} PRs merged.`;
   }
-
+  
+  // Add code change insights
+  if (codeChanges.summary) {
+    summary += ` ${codeChanges.summary}`;
+  }
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
