@@ -290,77 +290,16 @@ async function detectCICDTools(owner, repo) {
   };
   
   try {
-    const cicdFiles = [
-      { path: '.github/workflows', service: 'GitHub Actions' },
-      { path: '.gitlab-ci.yml', service: 'GitLab CI' },
-      { path: '.travis.yml', service: 'Travis CI' },
-      { path: '.circleci/config.yml', service: 'CircleCI' },
-      { path: 'Jenkinsfile', service: 'Jenkins' }
-    ];
+    // Only check most common CI/CD (GitHub Actions) to save API calls
+    try {
+      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.github/workflows`);
+      tools.cicd.push({ name: 'GitHub Actions', path: '.github/workflows', url: `https://github.com/${owner}/${repo}/tree/main/.github/workflows` });
+    } catch (e) {}
     
-    for (const file of cicdFiles) {
-      try {
-        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
-        tools.cicd.push({ name: file.service, path: file.path, url: `https://github.com/${owner}/${repo}/tree/main/${file.path}` });
-      } catch (e) {}
-    }
-    
+    // Only check Docker
     try {
       await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/Dockerfile`);
       tools.containers.push({ name: 'Dockerfile', path: 'Dockerfile', url: `https://github.com/${owner}/${repo}/blob/main/Dockerfile` });
-    } catch (e) {}
-    
-    const testFiles = [
-      { path: 'package.json', frameworks: ['jest', 'mocha', 'vitest', 'cypress'] },
-      { path: 'requirements.txt', frameworks: ['pytest', 'unittest'] }
-    ];
-    
-    for (const file of testFiles) {
-      try {
-        const content = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
-        if (content.content) {
-          const decoded = atob(content.content);
-          for (const framework of file.frameworks) {
-            if (decoded.toLowerCase().includes(framework)) {
-              if (!tools.testing.find(t => t.framework === framework)) {
-                tools.testing.push({ framework, file: file.path, url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` });
-              }
-            }
-          }
-        }
-      } catch (e) {}
-    }
-    
-    const coverageFiles = [
-      { path: 'codecov.yml', name: 'Codecov' },
-      { path: '.coveragerc', name: 'Coverage.py' }
-    ];
-    
-    for (const file of coverageFiles) {
-      try {
-        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
-        tools.coverage.push({ name: file.name, path: file.path, url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` });
-        break;
-      } catch (e) {}
-    }
-    
-    const lintFiles = [
-      { path: '.eslintrc', name: 'ESLint' },
-      { path: '.eslintrc.js', name: 'ESLint' },
-      { path: '.pylintrc', name: 'Pylint' }
-    ];
-    
-    for (const file of lintFiles) {
-      try {
-        await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}`);
-        tools.linting.push({ name: file.name, path: file.path, url: `https://github.com/${owner}/${repo}/blob/main/${file.path}` });
-        break;
-      } catch (e) {}
-    }
-    
-    try {
-      await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/.github/dependabot.yml`);
-      tools.security.push({ name: 'Dependabot', path: '.github/dependabot.yml', url: `https://github.com/${owner}/${repo}/blob/main/.github/dependabot.yml` });
     } catch (e) {}
     
   } catch (error) {}
@@ -381,11 +320,16 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   let allCommits = [];
   const commitMap = new Map();
   
+  // CRITICAL: Limit to 5 branches, 2 pages each to prevent Vercel timeout (10s limit)
+  // This gives us max 10 API calls for commits instead of 60
+  const maxBranches = 5;
+  const maxPages = 2;
+  
   // Fetch primary branch first without time filter
   const primaryBranchObj = branches.find(b => b.name === primaryBranch);
   if (primaryBranchObj) {
     let branchPage = 1;
-    while (branchPage <= 3) {
+    while (branchPage <= maxPages) {
       const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
       try {
         const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
@@ -419,11 +363,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   }
   
   // Fetch other branches
-  for (const branch of branches.slice(0, 20)) {
+  for (const branch of branches.slice(0, maxBranches)) {
     if (branch.name === primaryBranch) continue;
     
     let branchPage = 1;
-    while (branchPage <= 3) {
+    while (branchPage <= maxPages) {
       const params = { per_page: 100, page: branchPage, sha: branch.name };
       if (sinceDate) params.since = sinceDate;
       
