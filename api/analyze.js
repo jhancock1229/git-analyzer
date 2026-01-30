@@ -159,21 +159,22 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
-async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 20) {
+async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) {
   const analysis = {
-    languages: new Map(),
-    directories: new Map(),
-    changeTypes: { newFiles: 0, modifiedFiles: 0, deletedFiles: 0 },
-    largeChanges: [],
-    patterns: [],
+    commits: [],
+    fileChanges: [],
     summary: ''
   };
   
-  if (!recentCommits || recentCommits.length === 0) return analysis;
+  if (!recentCommits || recentCommits.length === 0) {
+    analysis.summary = 'No recent commits to analyze.';
+    return analysis;
+  }
   
   try {
     const commitsToAnalyze = recentCommits.slice(0, Math.min(limit, recentCommits.length));
     
+    // Fetch full commit details with file diffs in parallel
     const commitDetails = await Promise.allSettled(
       commitsToAnalyze.map(commit => 
         githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commit.sha}`)
@@ -181,84 +182,140 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 20) 
       )
     );
     
-    commitDetails.forEach(result => {
+    // Analyze each commit in detail
+    commitDetails.forEach((result, idx) => {
       if (result.status !== 'fulfilled' || !result.value?.files) return;
       
       const commit = result.value;
+      const commitMessage = commit.commit.message.split('\n')[0];
+      const author = commit.commit.author.name;
+      const date = new Date(commit.commit.author.date);
+      
+      const commitAnalysis = {
+        message: commitMessage,
+        author,
+        date,
+        sha: commit.sha.substring(0, 7),
+        url: `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
+        filesChanged: commit.files.length,
+        additions: commit.stats.additions,
+        deletions: commit.stats.deletions,
+        fileDetails: []
+      };
+      
+      // Analyze each file in the commit
       commit.files.forEach(file => {
         const filename = file.filename;
-        const status = file.status;
-        const changes = (file.additions || 0) + (file.deletions || 0);
-        
-        if (status === 'added') analysis.changeTypes.newFiles++;
-        else if (status === 'removed') analysis.changeTypes.deletedFiles++;
-        else if (status === 'modified') analysis.changeTypes.modifiedFiles++;
-        
         const ext = filename.split('.').pop().toLowerCase();
-        if (ext && ext.length < 6) {
-          analysis.languages.set(ext, (analysis.languages.get(ext) || 0) + changes);
-        }
+        const dir = filename.split('/')[0];
+        const status = file.status; // 'added', 'removed', 'modified', 'renamed'
+        const additions = file.additions || 0;
+        const deletions = file.deletions || 0;
         
-        const parts = filename.split('/');
-        if (parts.length > 1) {
-          analysis.directories.set(parts[0], (analysis.directories.get(parts[0]) || 0) + changes);
-        }
-        
-        if (changes > 100) {
-          analysis.largeChanges.push({
-            file: filename,
-            changes,
-            message: commit.commit.message.split('\n')[0]
-          });
-        }
-        
-        if (filename.match(/test|spec/i)) analysis.patterns.push('testing');
-        if (filename.match(/api|endpoint/i)) analysis.patterns.push('api');
-        if (filename.match(/component|view/i)) analysis.patterns.push('ui');
-        if (filename.match(/model|schema/i)) analysis.patterns.push('data');
+        commitAnalysis.fileDetails.push({
+          filename,
+          extension: ext,
+          directory: dir,
+          status,
+          additions,
+          deletions,
+          changes: additions + deletions
+        });
       });
+      
+      analysis.commits.push(commitAnalysis);
     });
     
+    // Generate comprehensive summary
     const summaryParts = [];
     
-    const langMap = {
-      js: 'JavaScript', jsx: 'React', ts: 'TypeScript', tsx: 'React', py: 'Python',
-      java: 'Java', rb: 'Ruby', go: 'Go', css: 'styling', html: 'markup'
-    };
+    // Overview
+    summaryParts.push(`Analyzed ${analysis.commits.length} most recent commits.`);
     
-    const topLangs = Array.from(analysis.languages.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([l]) => langMap[l] || l);
+    // Calculate totals
+    const totalFiles = analysis.commits.reduce((sum, c) => sum + c.filesChanged, 0);
+    const totalAdditions = analysis.commits.reduce((sum, c) => sum + c.additions, 0);
+    const totalDeletions = analysis.commits.reduce((sum, c) => sum + c.deletions, 0);
     
-    if (topLangs.length > 0) {
-      summaryParts.push(`Recent work in ${topLangs.join(', ')}`);
+    summaryParts.push(`Total impact: ${totalFiles} files changed, +${totalAdditions}/-${totalDeletions} lines.`);
+    
+    // Detailed breakdown of recent work
+    if (analysis.commits.length > 0) {
+      summaryParts.push('\n\n**Recent Changes:**');
+      
+      analysis.commits.slice(0, 5).forEach((commit, idx) => {
+        // Analyze what type of work this was
+        const files = commit.fileDetails;
+        const languages = new Map();
+        const directories = new Map();
+        const newFiles = files.filter(f => f.status === 'added').length;
+        const deletedFiles = files.filter(f => f.status === 'removed').length;
+        const modifiedFiles = files.filter(f => f.status === 'modified').length;
+        
+        files.forEach(f => {
+          languages.set(f.extension, (languages.get(f.extension) || 0) + 1);
+          directories.set(f.directory, (directories.get(f.directory) || 0) + 1);
+        });
+        
+        const topLang = Array.from(languages.entries()).sort((a, b) => b[1] - a[1])[0];
+        const topDir = Array.from(directories.entries()).sort((a, b) => b[1] - a[1])[0];
+        
+        const langMap = {
+          js: 'JavaScript', jsx: 'React', ts: 'TypeScript', tsx: 'React/TypeScript',
+          py: 'Python', java: 'Java', rb: 'Ruby', go: 'Go', rs: 'Rust',
+          css: 'CSS', html: 'HTML', md: 'documentation', json: 'config'
+        };
+        
+        let changeDesc = `\n${idx + 1}. **${commit.message}** (${commit.sha})`;
+        changeDesc += `\n   Author: ${commit.author}`;
+        changeDesc += `\n   Impact: ${commit.filesChanged} files, +${commit.additions}/-${commit.deletions} lines`;
+        
+        if (topLang) {
+          const langName = langMap[topLang[0]] || topLang[0];
+          changeDesc += `\n   Primary language: ${langName}`;
+        }
+        
+        if (topDir) {
+          changeDesc += `\n   Main area: ${topDir[0]}/`;
+        }
+        
+        // Describe the type of changes
+        const changeTypes = [];
+        if (newFiles > 0) changeTypes.push(`${newFiles} new file${newFiles > 1 ? 's' : ''}`);
+        if (modifiedFiles > 0) changeTypes.push(`${modifiedFiles} modified`);
+        if (deletedFiles > 0) changeTypes.push(`${deletedFiles} deleted`);
+        
+        if (changeTypes.length > 0) {
+          changeDesc += `\n   Changes: ${changeTypes.join(', ')}`;
+        }
+        
+        // Identify patterns from filenames
+        const hasTests = files.some(f => f.filename.match(/test|spec/i));
+        const hasAPI = files.some(f => f.filename.match(/api|endpoint|route/i));
+        const hasUI = files.some(f => f.filename.match(/component|view|page/i));
+        const hasDB = files.some(f => f.filename.match(/model|schema|migration/i));
+        const hasConfig = files.some(f => f.filename.match(/config|setup|\.env/i));
+        
+        const patterns = [];
+        if (hasTests) patterns.push('tests');
+        if (hasAPI) patterns.push('API');
+        if (hasUI) patterns.push('UI');
+        if (hasDB) patterns.push('database');
+        if (hasConfig) patterns.push('configuration');
+        
+        if (patterns.length > 0) {
+          changeDesc += `\n   Focus areas: ${patterns.join(', ')}`;
+        }
+        
+        summaryParts.push(changeDesc);
+      });
     }
     
-    const topDirs = Array.from(analysis.directories.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([d]) => d);
-    
-    if (topDirs.length > 0) {
-      summaryParts.push(`focused on: ${topDirs.join(', ')}`);
-    }
-    
-    const patterns = [...new Set(analysis.patterns)];
-    if (patterns.length > 0) {
-      const pMap = { testing: 'tests', api: 'API', ui: 'UI', data: 'data models' };
-      summaryParts.push(`including ${patterns.slice(0, 3).map(p => pMap[p] || p).join(', ')}`);
-    }
-    
-    if (analysis.largeChanges.length > 0) {
-      const top = analysis.largeChanges[0];
-      summaryParts.push(`Major change: ${top.message}`);
-    }
-    
-    analysis.summary = summaryParts.join(', ') + '.';
+    analysis.summary = summaryParts.join('\n');
     
   } catch (error) {
-    analysis.summary = '';
+    console.error('Error analyzing code changes:', error);
+    analysis.summary = 'Unable to analyze recent code changes.';
   }
   
   return analysis;
@@ -668,8 +725,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   const cicdTools = await detectCICDTools(owner, repo);
   
-  // Analyze actual code changes (not just commit messages)
-  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 15);
+  // Analyze actual code changes (not just commit messages) - detailed analysis
+  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 10);
   
   // Build rich summary with actual code insights
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
@@ -697,14 +754,22 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   }
   
   return {
-    // Essential stats
+    contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
     totalCommits: allCommits.length,
     timeRange: getTimeRangeLabel(timeRange),
     primaryBranch,
-    contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits).slice(0, 10),
-    
-    // The summary - most important part
-    activitySummary: summary
+    primaryBranchUrl: `https://github.com/${owner}/${repo}/tree/${primaryBranch}`,
+    totalBranches: activeBranches.length,
+    staleBranchesCount: staleBranches.length,
+    allBranchesCount: branches.length,
+    merges,
+    branches: activeBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, commitCount: branchCommitCounts.get(b.name) || 0, isStale: false })),
+    staleBranches: staleBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, lastCommit: b.lastCommit, daysSinceLastCommit: b.daysSinceLastCommit, isStale: true })),
+    timeline: [],
+    graph: graphNodes,
+    branchingAnalysis,
+    activitySummary: summary,
+    cicdTools
   };
 }
 
