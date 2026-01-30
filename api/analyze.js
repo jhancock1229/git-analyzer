@@ -49,6 +49,57 @@ function getTimeRangeLabel(timeRange) {
   return labels[timeRange] || 'Last Week';
 }
 
+function generateBranchActivityReport(activeBranches, branchCommitCounts, primaryBranch, timeRange) {
+  if (!activeBranches || activeBranches.length === 0) {
+    return null;
+  }
+  
+  const report = [];
+  
+  report.push('## 🌿 Active Branches');
+  report.push('');
+  
+  // Sort branches by commit count
+  const branchesWithActivity = activeBranches
+    .map(branch => ({
+      name: branch.name,
+      commitCount: branchCommitCounts.get(branch.name) || 0,
+      isPrimary: branch.name === primaryBranch
+    }))
+    .filter(b => b.commitCount > 0)
+    .sort((a, b) => b.commitCount - a.commitCount);
+  
+  if (branchesWithActivity.length === 0) {
+    return null;
+  }
+  
+  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
+  report.push(`**${branchesWithActivity.length} branch${branchesWithActivity.length !== 1 ? 'es' : ''} with activity this ${timeLabel}:**`);
+  report.push('');
+  
+  // Show top 10 most active branches
+  const topBranches = branchesWithActivity.slice(0, 10);
+  
+  topBranches.forEach((branch, idx) => {
+    const icon = branch.isPrimary ? '⭐' : '📍';
+    const label = branch.isPrimary ? ` (primary)` : '';
+    const barLength = Math.max(1, Math.floor((branch.commitCount / topBranches[0].commitCount) * 20));
+    const bar = '█'.repeat(barLength);
+    
+    report.push(`${idx + 1}. ${icon} **${branch.name}**${label}`);
+    report.push(`   ${bar} ${branch.commitCount} commit${branch.commitCount !== 1 ? 's' : ''}`);
+    report.push('');
+  });
+  
+  if (branchesWithActivity.length > 10) {
+    report.push(`*...and ${branchesWithActivity.length - 10} other active branch${branchesWithActivity.length - 10 !== 1 ? 'es' : ''}*`);
+    report.push('');
+  }
+  
+  return report.join('\n');
+}
+
+
 function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch) {
   const analysis = {
     patterns: [],
@@ -1001,6 +1052,9 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   // Generate management narrative from code changes
   const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 10);
   
+  // Generate branch activity report
+  const branchActivity = generateBranchActivityReport(activeBranches, branchCommitCounts, primaryBranch, timeRange);
+  
   // Build summary
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
   const commitCount = allCommits.length;
@@ -1015,6 +1069,11 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     
     if (mergedPRsInRange.length > 0) {
       summary += ` ${mergedPRsInRange.length} PRs merged.`;
+    }
+    
+    // Add branch activity report
+    if (branchActivity) {
+      summary += '\n\n' + branchActivity;
     }
     
     // Add narrative timeline
