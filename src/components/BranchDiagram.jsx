@@ -13,33 +13,50 @@ export default function BranchDiagram({ commits, primaryBranch, compact = false,
       svg.removeChild(svg.firstChild);
     }
 
-    // Classic Git visualization - horizontal timeline
-    const commitSpacing = 120;
-    const laneHeight = 60;
-    const padding = { top: 40, right: 40, bottom: 40, left: 120 };
+    // GitHub network graph style - vertical timeline
+    const commitSpacing = compact ? 50 : 70;
+    const laneWidth = compact ? 50 : 70;
+    const padding = { top: 60, right: 40, bottom: 40, left: 40 };
     
-    // Assign branches to lanes
+    // Assign branches to horizontal lanes
     const branchLanes = new Map();
     const lanes = new Map();
-    let currentLane = 0;
     
-    branchLanes.set(primaryBranch, currentLane);
-    currentLane++;
+    // Primary branch gets center lane
+    const centerLane = 5;
+    branchLanes.set(primaryBranch, centerLane);
+    
+    // Assign other branches alternating left and right
+    let leftLane = centerLane - 1;
+    let rightLane = centerLane + 1;
+    let useLeft = true;
     
     commits.forEach((commit, idx) => {
       commit.branches.forEach(branch => {
         if (!branchLanes.has(branch)) {
-          branchLanes.set(branch, currentLane);
-          currentLane++;
+          if (useLeft) {
+            branchLanes.set(branch, leftLane);
+            leftLane--;
+            useLeft = false;
+          } else {
+            branchLanes.set(branch, rightLane);
+            rightLane++;
+            useLeft = true;
+          }
         }
       });
       
-      const mainBranch = commit.branches[0] || primaryBranch;
-      lanes.set(idx, branchLanes.get(mainBranch));
+      // Assign commit to its primary branch lane
+      const mainBranch = commit.branches.includes(primaryBranch) 
+        ? primaryBranch 
+        : commit.branches[0];
+      lanes.set(idx, branchLanes.get(mainBranch) || centerLane);
     });
 
-    const canvasWidth = commits.length * commitSpacing + padding.left + padding.right;
-    const canvasHeight = currentLane * laneHeight + padding.top + padding.bottom;
+    const canvasHeight = commits.length * commitSpacing + padding.top + padding.bottom;
+    const maxLane = Math.max(...branchLanes.values());
+    const minLane = Math.min(...branchLanes.values());
+    const canvasWidth = (maxLane - minLane + 1) * laneWidth + padding.left + padding.right;
 
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', canvasHeight);
@@ -47,82 +64,70 @@ export default function BranchDiagram({ commits, primaryBranch, compact = false,
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     
-    // Draw branch lines
-    branchLanes.forEach((lane, branch) => {
-      const y = padding.top + lane * laneHeight;
-      const isPrimary = branch === primaryBranch;
+    // Draw connecting lines between commits
+    for (let i = 1; i < commits.length; i++) {
+      const prevCommit = commits[i - 1];
+      const currCommit = commits[i];
       
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', padding.left);
-      line.setAttribute('y1', y);
-      line.setAttribute('x2', canvasWidth - padding.right);
-      line.setAttribute('y2', y);
-      line.setAttribute('stroke', isPrimary ? '#0066CC' : '#28A745');
-      line.setAttribute('stroke-width', isPrimary ? '3' : '2');
-      line.setAttribute('opacity', '0.3');
-      g.appendChild(line);
+      const prevLane = lanes.get(i - 1);
+      const currLane = lanes.get(i);
       
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', padding.left - 10);
-      label.setAttribute('y', y + 5);
-      label.setAttribute('text-anchor', 'end');
-      label.setAttribute('font-size', '12');
-      label.setAttribute('font-weight', isPrimary ? '600' : '400');
-      label.setAttribute('fill', isPrimary ? '#0066CC' : '#28A745');
-      label.setAttribute('font-family', 'IBM Plex Mono, monospace');
-      label.textContent = branch;
-      g.appendChild(label);
-    });
-
-    // Draw merge lines
-    commits.forEach((commit, idx) => {
-      if (commit.parents && commit.parents.length > 1) {
-        const x = padding.left + idx * commitSpacing;
-        const y = padding.top + lanes.get(idx) * laneHeight;
-        
-        commit.parents.forEach(parentHash => {
-          const parentIdx = commits.findIndex(c => c.hash === parentHash);
-          if (parentIdx !== -1 && parentIdx < idx) {
-            const parentX = padding.left + parentIdx * commitSpacing;
-            const parentY = padding.top + lanes.get(parentIdx) * laneHeight;
-            
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            const midX = (x + parentX) / 2;
-            const d = `M ${parentX} ${parentY} Q ${midX} ${parentY} ${midX} ${(y + parentY) / 2} T ${x} ${y}`;
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', '#999');
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('opacity', '0.4');
-            path.setAttribute('stroke-dasharray', '5,5');
-            g.appendChild(path);
-          }
-        });
+      const x1 = padding.left + (prevLane - minLane) * laneWidth;
+      const y1 = padding.top + (i - 1) * commitSpacing;
+      const x2 = padding.left + (currLane - minLane) * laneWidth;
+      const y2 = padding.top + i * commitSpacing;
+      
+      const isPrimary = prevCommit.branches.includes(primaryBranch) && currCommit.branches.includes(primaryBranch);
+      
+      if (x1 === x2) {
+        // Straight vertical line (same branch)
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('stroke', isPrimary ? '#0366d6' : '#28a745');
+        line.setAttribute('stroke-width', isPrimary ? '3' : '2');
+        line.setAttribute('opacity', '0.6');
+        g.appendChild(line);
+      } else {
+        // Curved line (branch merge/diverge)
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const midY = (y1 + y2) / 2;
+        const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', '#586069');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('opacity', '0.5');
+        g.appendChild(path);
       }
-    });
+    }
 
     svg.appendChild(g);
 
     // Draw commits
     commits.forEach((commit, idx) => {
-      const x = padding.left + idx * commitSpacing;
       const lane = lanes.get(idx);
-      const y = padding.top + lane * laneHeight;
+      const x = padding.left + (lane - minLane) * laneWidth;
+      const y = padding.top + idx * commitSpacing;
       const isPrimary = commit.branches.includes(primaryBranch);
       const isMerge = commit.isMerge;
 
+      // Commit circle
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('cx', x);
       circle.setAttribute('cy', y);
-      circle.setAttribute('r', isMerge ? '10' : '8');
-      circle.setAttribute('fill', isPrimary ? '#0066CC' : '#28A745');
+      circle.setAttribute('r', isMerge ? '7' : '5');
+      circle.setAttribute('fill', isPrimary ? '#0366d6' : '#28a745');
       circle.setAttribute('stroke', '#ffffff');
-      circle.setAttribute('stroke-width', '3');
+      circle.setAttribute('stroke-width', '2');
       circle.setAttribute('cursor', 'pointer');
       
+      // Hover effects
       circle.addEventListener('mouseenter', (e) => {
-        circle.setAttribute('r', isMerge ? '12' : '10');
-        circle.setAttribute('stroke-width', '4');
+        circle.setAttribute('r', isMerge ? '9' : '7');
+        circle.setAttribute('stroke-width', '3');
         
         const rect = svg.getBoundingClientRect();
         setTooltip({
@@ -133,8 +138,8 @@ export default function BranchDiagram({ commits, primaryBranch, compact = false,
       });
       
       circle.addEventListener('mouseleave', () => {
-        circle.setAttribute('r', isMerge ? '10' : '8');
-        circle.setAttribute('stroke-width', '3');
+        circle.setAttribute('r', isMerge ? '7' : '5');
+        circle.setAttribute('stroke-width', '2');
         setTooltip(null);
       });
       
@@ -144,21 +149,67 @@ export default function BranchDiagram({ commits, primaryBranch, compact = false,
       
       svg.appendChild(circle);
 
-      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', x);
-      text.setAttribute('y', y + 25);
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('font-size', '10');
-      text.setAttribute('fill', '#666');
-      text.setAttribute('font-family', 'IBM Plex Mono, monospace');
-      text.textContent = commit.hash;
-      svg.appendChild(text);
+      // Commit message to the right (GitHub style)
+      if (!compact) {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x + 15);
+        text.setAttribute('y', y + 4);
+        text.setAttribute('font-size', '12');
+        text.setAttribute('fill', '#24292e');
+        text.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif');
+        text.textContent = commit.subject.length > 50 ? commit.subject.substring(0, 47) + '...' : commit.subject;
+        svg.appendChild(text);
+        
+        // Author and hash below
+        const meta = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        meta.setAttribute('x', x + 15);
+        meta.setAttribute('y', y + 18);
+        meta.setAttribute('font-size', '10');
+        meta.setAttribute('fill', '#586069');
+        meta.setAttribute('font-family', 'monospace');
+        meta.textContent = `${commit.author.split(' ')[0]} • ${commit.hash}`;
+        svg.appendChild(meta);
+      }
+    });
+
+    // Draw branch labels at the top
+    branchLanes.forEach((lane, branch) => {
+      const x = padding.left + (lane - minLane) * laneWidth;
+      const isPrimary = branch === primaryBranch;
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', x);
+      label.setAttribute('y', padding.top - 20);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('font-size', '11');
+      label.setAttribute('font-weight', isPrimary ? '600' : '400');
+      label.setAttribute('fill', isPrimary ? '#0366d6' : '#28a745');
+      label.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif');
+      label.textContent = branch;
+      svg.appendChild(label);
+      
+      // Small circle indicator
+      const indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      indicator.setAttribute('cx', x);
+      indicator.setAttribute('cy', padding.top - 35);
+      indicator.setAttribute('r', '4');
+      indicator.setAttribute('fill', isPrimary ? '#0366d6' : '#28a745');
+      svg.appendChild(indicator);
     });
 
   }, [commits, primaryBranch, compact, onCommitClick]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', overflowX: 'auto', background: '#fafafa', borderRadius: '8px', padding: '20px' }}>
+    <div ref={containerRef} style={{ 
+      position: 'relative', 
+      width: '100%', 
+      overflowY: 'auto', 
+      maxHeight: '800px',
+      background: '#ffffff', 
+      borderRadius: '6px', 
+      border: '1px solid #e1e4e8',
+      padding: '20px' 
+    }}>
       <svg ref={svgRef} style={{ display: 'block' }} />
       
       {tooltip && (
@@ -166,27 +217,28 @@ export default function BranchDiagram({ commits, primaryBranch, compact = false,
           position: 'absolute',
           left: tooltip.x + 15,
           top: tooltip.y - 10,
-          background: 'rgba(0, 0, 0, 0.9)',
-          color: 'white',
-          padding: '12px 16px',
+          background: '#24292e',
+          color: '#ffffff',
+          padding: '10px 14px',
           borderRadius: '6px',
-          fontSize: '13px',
-          fontFamily: 'IBM Plex Mono, monospace',
+          fontSize: '12px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
           pointerEvents: 'none',
           zIndex: 1000,
           maxWidth: '400px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          boxShadow: '0 3px 12px rgba(0,0,0,0.3)',
+          border: '1px solid #444d56'
         }}>
-          <div style={{ fontWeight: '600', marginBottom: '6px' }}>
+          <div style={{ fontWeight: '600', marginBottom: '6px', fontFamily: 'monospace' }}>
             {tooltip.commit.hash}
           </div>
-          <div style={{ opacity: 0.9, marginBottom: '6px' }}>
+          <div style={{ marginBottom: '6px' }}>
             {tooltip.commit.subject}
           </div>
-          <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+          <div style={{ fontSize: '11px', opacity: 0.8, marginBottom: '4px' }}>
             {tooltip.commit.author}
           </div>
-          <div style={{ fontSize: '11px', opacity: 0.6 }}>
+          <div style={{ fontSize: '10px', opacity: 0.7, fontFamily: 'monospace' }}>
             {tooltip.commit.branches.join(', ')}
           </div>
         </div>
