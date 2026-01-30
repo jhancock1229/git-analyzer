@@ -159,6 +159,103 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
+function analyzeCommitMessages(commits) {
+  const insights = {
+    features: 0,
+    bugfixes: 0,
+    performance: 0,
+    security: 0,
+    tests: 0,
+    docs: 0,
+    refactors: 0,
+    topAreas: [],
+    technicalDetails: []
+  };
+  
+  if (commits.length === 0) return insights;
+  
+  const areaFrequency = new Map();
+  const detailFrequency = new Map();
+  
+  commits.forEach(commitObj => {
+    const message = commitObj.commit.message;
+    const firstLine = message.split('\n')[0];
+    const lower = firstLine.toLowerCase();
+    
+    // Categorize
+    if (/\b(feat|feature|add|new|implement|introduce)\b/i.test(firstLine)) insights.features++;
+    if (/\b(fix|bug|issue|resolve|patch|error)\b/i.test(firstLine)) insights.bugfixes++;
+    if (/\b(perf|performance|optimize|speed|faster|slow)\b/i.test(firstLine)) insights.performance++;
+    if (/\b(security|vulnerability|cve|auth|safe)\b/i.test(firstLine)) insights.security++;
+    if (/\b(test|tests|testing|spec|jest|unit)\b/i.test(firstLine)) insights.tests++;
+    if (/\b(doc|docs|documentation|readme|comment)\b/i.test(firstLine)) insights.docs++;
+    if (/\b(refactor|restructure|reorganize|cleanup)\b/i.test(firstLine)) insights.refactors++;
+    
+    // Extract what area/component was changed
+    // Look for patterns like "fix(auth): ...", "feat(api): ...", or "Update auth module"
+    let area = null;
+    
+    // Pattern 1: Conventional commits - "type(scope):"
+    const conventionalMatch = firstLine.match(/^[a-z]+\(([^)]+)\):/i);
+    if (conventionalMatch) {
+      area = conventionalMatch[1].toLowerCase();
+    }
+    
+    // Pattern 2: Keywords like "in X", "for X", "to X"
+    if (!area) {
+      const contextMatch = firstLine.match(/\b(?:in|for|to|of)\s+([a-z]{3,20}(?:\s+[a-z]{3,20})?)/i);
+      if (contextMatch) {
+        area = contextMatch[1].toLowerCase();
+      }
+    }
+    
+    // Pattern 3: Direct mentions of components (first capitalized word after action)
+    if (!area) {
+      const componentMatch = firstLine.match(/^(?:add|fix|update|improve|remove|create|delete|modify)\s+([A-Z][a-z]+)/);
+      if (componentMatch) {
+        area = componentMatch[1].toLowerCase();
+      }
+    }
+    
+    if (area) {
+      // Clean up the area
+      area = area.replace(/[^a-z0-9\s]/g, ' ').trim();
+      if (area.length > 2 && area.length < 30) {
+        areaFrequency.set(area, (areaFrequency.get(area) || 0) + 1);
+      }
+    }
+    
+    // Extract technical details (specific nouns/technologies mentioned)
+    const words = firstLine
+      .replace(/^[a-z]+(\([^)]+\))?:\s*/i, '') // Remove conventional commit prefix
+      .split(/\s+/)
+      .filter(w => w.length > 3 && /^[A-Za-z]/.test(w));
+    
+    words.forEach(word => {
+      const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (clean.length > 3 && clean.length < 20) {
+        detailFrequency.set(clean, (detailFrequency.get(clean) || 0) + 1);
+      }
+    });
+  });
+  
+  // Get top areas
+  insights.topAreas = Array.from(areaFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([area]) => area);
+  
+  // Get top technical details (filter out common words)
+  const commonWords = new Set(['this', 'that', 'with', 'from', 'have', 'more', 'when', 'been', 'make', 'made', 'use', 'used', 'add', 'added', 'fix', 'fixed', 'update', 'updated']);
+  insights.technicalDetails = Array.from(detailFrequency.entries())
+    .filter(([word]) => !commonWords.has(word))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([detail]) => detail);
+  
+  return insights;
+}
+
 async function detectCICDTools(owner, repo) {
   const tools = {
     cicd: [],
@@ -403,38 +500,71 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const cicdTools = await detectCICDTools(owner, repo);
   const prInsights = analyzePRActivity(mergedPRsInRange);
   
-  // Simple conversational summary
+  // Analyze commit messages for detailed insights
+  const commitInsights = analyzeCommitMessages(allCommits);
+  
+  // Build rich conversational summary
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '');
   const commitCount = allCommits.length;
   const devCount = contributors.size;
   
   let summary = '';
+  
+  // Activity level
   if (commitCount === 0) {
     summary = `Quiet ${timeLabel}—no new activity.`;
   } else if (commitCount > 100 && devCount > 15) {
-    summary = `Busy ${timeLabel} with ${devCount} developers pushing ${commitCount} commits.`;
+    summary = `Very active ${timeLabel}: ${devCount} developers pushed ${commitCount} commits.`;
   } else if (commitCount > 50) {
-    summary = `Active ${timeLabel}—${devCount} developers committed ${commitCount} changes.`;
+    summary = `Busy ${timeLabel}: ${devCount} developers made ${commitCount} changes.`;
+  } else if (commitCount > 20) {
+    summary = `Steady ${timeLabel}: ${commitCount} commits from ${devCount} ${devCount === 1 ? 'developer' : 'developers'}.`;
   } else {
     summary = `${commitCount} commits from ${devCount} ${devCount === 1 ? 'developer' : 'developers'} this ${timeLabel}.`;
   }
   
-  if (mergedPRsInRange.length > 0) {
-    const { features, bugfixes } = prInsights.prTypes;
-    if (features > 0 && bugfixes > 0) {
-      summary += ` ${features} new features and ${bugfixes} bug fixes shipped.`;
-    } else if (features > 0) {
-      summary += ` ${features} new features added.`;
-    } else if (bugfixes > 0) {
-      summary += ` ${bugfixes} bugs fixed.`;
+  // What got done - from commit analysis
+  const highlights = [];
+  
+  if (commitInsights.features > 2) {
+    highlights.push(`${commitInsights.features} features added`);
+  } else if (commitInsights.features > 0) {
+    highlights.push(`${commitInsights.features} new feature${commitInsights.features > 1 ? 's' : ''}`);
+  }
+  
+  if (commitInsights.bugfixes > 5) {
+    highlights.push(`${commitInsights.bugfixes} bugs fixed (stability focus)`);
+  } else if (commitInsights.bugfixes > 0) {
+    highlights.push(`${commitInsights.bugfixes} bug${commitInsights.bugfixes > 1 ? 's' : ''} fixed`);
+  }
+  
+  if (commitInsights.performance > 2) {
+    highlights.push(`performance improvements`);
+  }
+  
+  if (commitInsights.security > 0) {
+    highlights.push(`security updates`);
+  }
+  
+  if (highlights.length > 0) {
+    summary += ` Work included: ${highlights.join(', ')}.`;
+  }
+  
+  // What they're working on - specific areas
+  if (commitInsights.topAreas.length > 0) {
+    const areas = commitInsights.topAreas.slice(0, 3);
+    if (areas.length === 1) {
+      summary += ` Focus: ${areas[0]}.`;
+    } else if (areas.length === 2) {
+      summary += ` Key areas: ${areas[0]} and ${areas[1]}.`;
+    } else {
+      summary += ` Active in: ${areas[0]}, ${areas[1]}, and ${areas[2]}.`;
     }
-    
-    if (prInsights.recentWork.length > 0) {
-      const top3 = prInsights.recentWork.slice(0, 3);
-      if (top3.length >= 2) {
-        summary += ` Main work: ${top3.join(', ')}.`;
-      }
-    }
+  }
+  
+  // Add testing/quality signals
+  if (commitInsights.tests > commitCount * 0.2) {
+    summary += ` Strong testing culture (${Math.round(commitInsights.tests / commitCount * 100)}% of commits include tests).`;
   }
   
   return {
