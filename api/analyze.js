@@ -172,12 +172,14 @@ function analyzeCommitMessages(commits) {
     technicalDetails: []
   };
   
-  if (commits.length === 0) return insights;
+  if (!commits || commits.length === 0) return insights;
   
   const areaFrequency = new Map();
   const detailFrequency = new Map();
   
   commits.forEach(commitObj => {
+    if (!commitObj || !commitObj.commit || !commitObj.commit.message) return;
+    
     const message = commitObj.commit.message;
     const firstLine = message.split('\n')[0];
     const lower = firstLine.toLowerCase();
