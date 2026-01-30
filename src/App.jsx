@@ -117,7 +117,7 @@ function App() {
                         <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: colors.primary, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '600', fontSize: '14px' }}>{i + 1}</div>
                         <div>
                           <div style={{ fontWeight: '500' }}>{c.name}</div>
-                          <div style={{ fontSize: '12px', opacity: 0.6' }}>{c.email}</div>
+                          <div style={{ fontSize: '12px', opacity: 0.6 }}>{c.email}</div>
                         </div>
                       </div>
                       <div style={{ fontSize: '16px', fontWeight: '600', color: colors.primary }}>{c.commits} commits</div>
