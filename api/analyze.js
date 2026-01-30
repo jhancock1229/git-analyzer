@@ -159,7 +159,7 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
-function analyzeCommitMessages(commits) {
+function analyzeCommitMessages(commits, owner, repo) {
   const insights = {
     features: 0,
     bugfixes: 0,
@@ -169,9 +169,10 @@ function analyzeCommitMessages(commits) {
     docs: 0,
     refactors: 0,
     breaking: 0,
+    breakingChanges: [], // Array of breaking change commits with URLs
     topAreas: [],
     technicalDetails: [],
-    specificChanges: [], // Actual things that were done
+    specificChanges: [],
     qualitySignals: {
       hasTests: 0,
       hasDocs: 0,
@@ -200,7 +201,18 @@ function analyzeCommitMessages(commits) {
     if (/\b(test|tests|testing|spec|jest|unit|coverage)\b/i.test(fullMessage)) insights.tests++;
     if (/\b(doc|docs|documentation|readme|comment|guide)\b/i.test(fullMessage)) insights.docs++;
     if (/\b(refactor|restructure|reorganize|cleanup|clean up)\b/i.test(firstLine)) insights.refactors++;
-    if (/\b(breaking|break|deprecated|deprecate)\b/i.test(fullMessage)) insights.breaking++;
+    
+    // Track breaking changes with full details
+    if (/\b(breaking|break|deprecated|deprecate)\b/i.test(fullMessage)) {
+      insights.breaking++;
+      insights.breakingChanges.push({
+        hash: commitObj.hash,
+        fullHash: commitObj.fullHash,
+        subject: commitObj.subject,
+        author: commitObj.author,
+        url: `https://github.com/${owner}/${repo}/commit/${commitObj.fullHash}`
+      });
+    }
     
     // Quality signals
     if (/\b(test|tests|testing|spec)\b/i.test(fullMessage)) insights.qualitySignals.hasTests++;
@@ -512,7 +524,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const prInsights = analyzePRActivity(mergedPRsInRange);
   
   // Analyze commit messages for detailed insights
-  const commitInsights = analyzeCommitMessages(allCommits);
+  const commitInsights = analyzeCommitMessages(allCommits, owner, repo);
   
   // Build rich, detailed conversational summary
   const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '');
@@ -622,7 +634,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
     
     if (commitInsights.breaking > 0) {
-      qualityNotes.push(`⚠️ ${commitInsights.breaking} breaking change${commitInsights.breaking > 1 ? 's' : ''} requiring attention`);
+      const breakingLinks = commitInsights.breakingChanges.map(bc => 
+        `<a href="${bc.url}" target="_blank" rel="noopener noreferrer" style="color: #d73a49; text-decoration: underline;">${bc.subject.substring(0, 50)}</a>`
+      ).join(', ');
+      qualityNotes.push(`⚠️ ${commitInsights.breaking} breaking change${commitInsights.breaking > 1 ? 's' : ''}: ${breakingLinks}`);
     }
     
     if (qualityNotes.length > 0) {
