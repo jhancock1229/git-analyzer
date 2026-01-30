@@ -522,141 +522,28 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   const cicdTools = await detectCICDTools(owner, repo);
-  const prInsights = analyzePRActivity(mergedPRsInRange);
   
-  // Analyze commit messages for detailed insights (use graphNodes which have proper structure)
-  const commitInsights = analyzeCommitMessages(graphNodes, owner, repo);
   
-  // Build rich, detailed conversational summary
-  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase().replace('last ', '');
+  // Simple summary
+  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
   const commitCount = allCommits.length;
   const devCount = contributors.size;
   
-  const parts = [];
-  
-  // Opening - activity level with context
+  let summary = "";
   if (commitCount === 0) {
-    parts.push(`No activity this ${timeLabel}.`);
+    summary = `No activity this ${timeLabel}.`;
+  } else if (commitCount > 100) {
+    summary = `Very active: ${devCount} developers pushed ${commitCount} commits this ${timeLabel}.`;
+  } else if (commitCount > 50) {
+    summary = `Active: ${devCount} developers made ${commitCount} commits this ${timeLabel}.`;
   } else {
-    // Describe velocity and team size
-    let velocity = '';
-    if (commitCount > 100 && devCount > 15) {
-      velocity = `High velocity development with ${devCount} active contributors making ${commitCount} commits`;
-    } else if (commitCount > 50) {
-      velocity = `Active development: ${devCount} ${devCount === 1 ? 'developer' : 'developers'} pushed ${commitCount} commits`;
-    } else if (commitCount > 20) {
-      velocity = `Steady progress with ${commitCount} commits from ${devCount} ${devCount === 1 ? 'contributor' : 'contributors'}`;
-    } else {
-      velocity = `${commitCount} commits from ${devCount} ${devCount === 1 ? 'developer' : 'developers'}`;
-    }
-    parts.push(`${velocity} this ${timeLabel}.`);
+    summary = `${commitCount} commits from ${devCount} ${devCount === 1 ? "developer" : "developers"} this ${timeLabel}.`;
   }
   
-  if (commitCount > 0) {
-    // What type of work was done
-    const workTypes = [];
-    if (commitInsights.features > 0) {
-      if (commitInsights.features > 10) {
-        workTypes.push(`heavy feature development (${commitInsights.features} features)`);
-      } else {
-        workTypes.push(`${commitInsights.features} new feature${commitInsights.features > 1 ? 's' : ''}`);
-      }
-    }
-    
-    if (commitInsights.bugfixes > 0) {
-      if (commitInsights.bugfixes > commitInsights.features * 2) {
-        workTypes.push(`${commitInsights.bugfixes} bug fixes—indicating a stabilization phase`);
-      } else if (commitInsights.bugfixes > 10) {
-        workTypes.push(`${commitInsights.bugfixes} issues resolved`);
-      } else {
-        workTypes.push(`${commitInsights.bugfixes} bug fix${commitInsights.bugfixes > 1 ? 'es' : ''}`);
-      }
-    }
-    
-    if (commitInsights.refactors > 5) {
-      workTypes.push(`significant refactoring (${commitInsights.refactors} commits)`);
-    }
-    
-    if (commitInsights.performance > 0) {
-      workTypes.push(`${commitInsights.performance} performance optimization${commitInsights.performance > 1 ? 's' : ''}`);
-    }
-    
-    if (commitInsights.security > 0) {
-      workTypes.push(`${commitInsights.security} security update${commitInsights.security > 1 ? 's' : ''}`);
-    }
-    
-    if (workTypes.length > 0) {
-      parts.push(`Work included: ${workTypes.join(', ')}.`);
-    }
-    
-    // Where the work happened
-    if (commitInsights.topAreas && commitInsights.topAreas.length > 0) {
-      const areaDescriptions = commitInsights.topAreas.map(item => {
-        const { area, count } = item || { area: 'unknown', count: 0 };
-        if (count > 10) return `${area} (${count} commits—major focus)`;
-        if (count > 5) return `${area} (${count} commits)`;
-        return area;
-      });
-      
-      if (areaDescriptions.length === 1) {
-        parts.push(`All work concentrated in ${areaDescriptions[0]}.`);
-      } else if (areaDescriptions.length === 2) {
-        parts.push(`Primary areas: ${areaDescriptions[0]} and ${areaDescriptions[1]}.`);
-      } else {
-        parts.push(`Active development across: ${areaDescriptions.join(', ')}.`);
-      }
-    }
-    
-    // Specific notable changes
-    if (commitInsights.specificChanges && commitInsights.specificChanges.length > 0) {
-      const highlights = commitInsights.specificChanges.slice(0, 3).filter(Boolean);
-      if (highlights.length > 0) {
-        parts.push(`Notable changes: ${highlights.join('; ')}.`);
-      }
-    }
-    
-    // Quality and process signals
-    const qualityNotes = [];
-    
-    if (commitInsights.qualitySignals && commitInsights.qualitySignals.hasTests !== undefined) {
-      const testPercentage = Math.round((commitInsights.qualitySignals.hasTests / commitCount) * 100);
-      if (testPercentage > 40) {
-        qualityNotes.push(`excellent test coverage (${testPercentage}% of commits include tests)`);
-      } else if (testPercentage > 20) {
-        qualityNotes.push(`good testing discipline (${testPercentage}% of commits have tests)`);
-      }
-    }
-    
-    if (commitInsights.qualitySignals && commitInsights.qualitySignals.hasDocs !== undefined) {
-      const docPercentage = Math.round((commitInsights.qualitySignals.hasDocs / commitCount) * 100);
-      if (docPercentage > 15) {
-        qualityNotes.push(`strong documentation practice`);
-      }
-    }
-    
-    if (commitInsights.breaking > 0) {
-      const breakingLinks = commitInsights.breakingChanges.map(bc => 
-        `<a href="${bc.url}" target="_blank" rel="noopener noreferrer" style="color: #d73a49; text-decoration: underline;">${bc.subject.substring(0, 50)}</a>`
-      ).join(', ');
-      qualityNotes.push(`⚠️ ${commitInsights.breaking} breaking change${commitInsights.breaking > 1 ? 's' : ''}: ${breakingLinks}`);
-    }
-    
-    if (qualityNotes.length > 0) {
-      parts.push(`Quality: ${qualityNotes.join(', ')}.`);
-    }
-    
-    // Team collaboration signal
-    if (devCount > 10) {
-      parts.push(`Large, distributed team collaboration.`);
-    } else if (devCount > 5) {
-      parts.push(`Cross-functional team of ${devCount} contributors.`);
-    } else if (devCount === 1) {
-      const soloContributor = Array.from(contributors.values())[0];
-      parts.push(`Solo development by ${soloContributor.name}.`);
-    }
+  if (mergedPRsInRange.length > 0) {
+    summary += ` ${mergedPRsInRange.length} PRs merged.`;
   }
-  
-  const summary = parts.join(' ');
+
   
   return {
     contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),

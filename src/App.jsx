@@ -377,9 +377,9 @@ function App() {
                   lineHeight: '1.7',
                   color: '#333',
                   fontFamily: 'IBM Plex Mono'
-                }}
-                dangerouslySetInnerHTML={{ __html: data.activitySummary }}
-                />
+                }}>
+                  {data.activitySummary}
+                </p>
               </div>
             )}
 
