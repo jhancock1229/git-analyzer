@@ -577,8 +577,9 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
     
     // Where the work happened
-    if (commitInsights.topAreas.length > 0) {
-      const areaDescriptions = commitInsights.topAreas.map(({ area, count }) => {
+    if (commitInsights.topAreas && commitInsights.topAreas.length > 0) {
+      const areaDescriptions = commitInsights.topAreas.map(item => {
+        const { area, count } = item || { area: 'unknown', count: 0 };
         if (count > 10) return `${area} (${count} commits—major focus)`;
         if (count > 5) return `${area} (${count} commits)`;
         return area;
@@ -594,8 +595,8 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
     
     // Specific notable changes
-    if (commitInsights.specificChanges.length > 0) {
-      const highlights = commitInsights.specificChanges.slice(0, 3);
+    if (commitInsights.specificChanges && commitInsights.specificChanges.length > 0) {
+      const highlights = commitInsights.specificChanges.slice(0, 3).filter(Boolean);
       if (highlights.length > 0) {
         parts.push(`Notable changes: ${highlights.join('; ')}.`);
       }
@@ -604,16 +605,20 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     // Quality and process signals
     const qualityNotes = [];
     
-    const testPercentage = Math.round((commitInsights.qualitySignals.hasTests / commitCount) * 100);
-    if (testPercentage > 40) {
-      qualityNotes.push(`excellent test coverage (${testPercentage}% of commits include tests)`);
-    } else if (testPercentage > 20) {
-      qualityNotes.push(`good testing discipline (${testPercentage}% of commits have tests)`);
+    if (commitInsights.qualitySignals && commitInsights.qualitySignals.hasTests !== undefined) {
+      const testPercentage = Math.round((commitInsights.qualitySignals.hasTests / commitCount) * 100);
+      if (testPercentage > 40) {
+        qualityNotes.push(`excellent test coverage (${testPercentage}% of commits include tests)`);
+      } else if (testPercentage > 20) {
+        qualityNotes.push(`good testing discipline (${testPercentage}% of commits have tests)`);
+      }
     }
     
-    const docPercentage = Math.round((commitInsights.qualitySignals.hasDocs / commitCount) * 100);
-    if (docPercentage > 15) {
-      qualityNotes.push(`strong documentation practice`);
+    if (commitInsights.qualitySignals && commitInsights.qualitySignals.hasDocs !== undefined) {
+      const docPercentage = Math.round((commitInsights.qualitySignals.hasDocs / commitCount) * 100);
+      if (docPercentage > 15) {
+        qualityNotes.push(`strong documentation practice`);
+      }
     }
     
     if (commitInsights.breaking > 0) {
