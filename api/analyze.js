@@ -297,7 +297,9 @@ Format your response in markdown with clear sections. Be specific and reference 
     });
 
     if (!response.ok) {
-      throw new Error(`Anthropic API error: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[NARRATIVE] API error details:', JSON.stringify(errorData));
+      throw new Error(`Anthropic API error: ${response.status} - ${JSON.stringify(errorData)}`);
     }
 
     const data = await response.json();
@@ -309,6 +311,7 @@ Format your response in markdown with clear sections. Be specific and reference 
     
   } catch (error) {
     console.error('[NARRATIVE] LLM generation failed:', error);
+    console.error('[NARRATIVE] Error details:', error.message);
     // Fallback to basic categorization
     return `# Development Activity: ${owner}/${repo}\n\n**${totalCommits} commits** in this period\n\nUnable to generate detailed summary. Please try again.`;
   }
@@ -1038,12 +1041,22 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   }
   
   const mergedPRs = pullRequests.filter(pr => pr.merged_at);
+  console.log(`[DEBUG] Total closed PRs: ${pullRequests.length}, Merged PRs: ${mergedPRs.length}`);
+  
   const mergedPRsInRange = mergedPRs.filter(pr => {
     if (!sinceDate) return true;
-    return new Date(pr.merged_at) >= new Date(sinceDate);
+    const mergedDate = new Date(pr.merged_at);
+    const cutoffDate = new Date(sinceDate);
+    return mergedDate >= cutoffDate;
   });
   
   console.log(`[DEBUG] Merged PRs in range: ${mergedPRsInRange.length}`);
+  
+  if (mergedPRs.length > 0 && mergedPRsInRange.length === 0) {
+    console.log(`[DEBUG] WARNING: ${mergedPRs.length} merged PRs found, but 0 in date range!`);
+    console.log(`[DEBUG] Cutoff date: ${sinceDate}`);
+    console.log(`[DEBUG] Sample PR merge dates:`, mergedPRs.slice(0, 5).map(pr => pr.merged_at));
+  }
   
   const contributors = new Map();
   const graphNodes = [];
