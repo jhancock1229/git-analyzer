@@ -258,6 +258,12 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 30) 
 
 async function generateLLMSummary(owner, repo, commitSummary, totalCommits) {
   try {
+    // Check if API key is available
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.log('[NARRATIVE] ANTHROPIC_API_KEY not set, skipping LLM summary');
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+    
     const prompt = `You are analyzing a GitHub repository: ${owner}/${repo}
 
 Here are the ${totalCommits} most recent commits:
@@ -271,11 +277,13 @@ Please write a clear, executive-friendly summary of what the development team ha
 
 Format your response in markdown with clear sections. Be specific and reference actual commit messages when relevant. Write in a professional but conversational tone. Keep it concise (300-500 words).`;
 
+    console.log('[NARRATIVE] Calling Anthropic API...');
+    
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({

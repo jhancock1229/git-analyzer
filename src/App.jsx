@@ -269,10 +269,29 @@ function App() {
               letterSpacing: '0.5px',
               transition: 'all 0.2s',
               opacity: loading ? 0.6 : 1,
-              borderRadius: '6px'
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
             }}
           >
+            {loading && (
+              <span style={{
+                display: 'inline-block',
+                width: '16px',
+                height: '16px',
+                border: '2px solid transparent',
+                borderTopColor: colors.buttonText,
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+            )}
             {loading ? 'ANALYZING...' : 'ANALYZE REPOSITORY'}
+            <style>{`
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
           </button>
 
           {error && (
