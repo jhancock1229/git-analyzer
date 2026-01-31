@@ -909,6 +909,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     } catch (error) {
       console.log(`[DEBUG] Fallback error: ${error.message}`);
     }
+  }
   
   // Fetch other branches (with time filter for efficiency)
   for (const branch of branches.slice(0, maxOtherBranches)) {
