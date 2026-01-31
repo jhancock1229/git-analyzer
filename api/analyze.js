@@ -813,12 +813,43 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
   }
   
-  const pullRequests = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, { state: 'closed', per_page: 100 });
+  // Fetch recently closed PRs (with pagination for active repos)
+  let pullRequests = [];
+  try {
+    console.log('[DEBUG] Fetching PRs...');
+    
+    // Fetch up to 3 pages of recently closed PRs (300 total)
+    for (let page = 1; page <= 3; page++) {
+      const params = { 
+        state: 'closed', 
+        per_page: 100, 
+        page,
+        sort: 'updated',
+        direction: 'desc'
+      };
+      
+      const prs = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, params);
+      if (prs.length === 0) break;
+      
+      pullRequests = pullRequests.concat(prs);
+      
+      // If we got less than 100, we've reached the end
+      if (prs.length < 100) break;
+    }
+    
+    console.log(`[DEBUG] Fetched ${pullRequests.length} total PRs`);
+  } catch (error) {
+    console.log(`[DEBUG] Error fetching PRs: ${error.message}`);
+    pullRequests = [];
+  }
+  
   const mergedPRs = pullRequests.filter(pr => pr.merged_at);
   const mergedPRsInRange = mergedPRs.filter(pr => {
     if (!sinceDate) return true;
     return new Date(pr.merged_at) >= new Date(sinceDate);
   });
+  
+  console.log(`[DEBUG] Merged PRs in range: ${mergedPRsInRange.length}`);
   
   const contributors = new Map();
   const graphNodes = [];
