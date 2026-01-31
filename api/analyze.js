@@ -796,20 +796,6 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   allCommits = Array.from(commitMap.values()).map(item => ({ ...item.commit, branches: item.branches }));
   allCommits.sort((a, b) => new Date(b.commit.author.date) - new Date(a.commit.author.date));
   
-  console.log(`[DEBUG] ==========================================`);
-  console.log(`[DEBUG] Time range: ${timeRange}, sinceDate: ${sinceDate}`);
-  console.log(`[DEBUG] Total commits fetched: ${allCommits.length}`);
-  console.log(`[DEBUG] Contributors: ${contributors.size}`);
-  if (allCommits.length > 0) {
-    console.log(`[DEBUG] First commit: ${allCommits[0].commit.message.split('\n')[0]}`);
-    console.log(`[DEBUG] First commit date: ${allCommits[0].commit.author.date}`);
-  } else {
-    console.log(`[DEBUG] NO COMMITS FOUND!`);
-    console.log(`[DEBUG] Branches checked: ${branches.length}`);
-    console.log(`[DEBUG] Primary branch: ${primaryBranch}`);
-  }
-  console.log(`[DEBUG] ==========================================`);
-  
   if (!activeBranches.find(b => b.name === primaryBranch)) {
     const primaryBranchObj = branches.find(b => b.name === primaryBranch);
     if (primaryBranchObj) activeBranches.push(primaryBranchObj);
@@ -873,6 +859,22 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
   const cicdTools = await detectCICDTools(owner, repo);
+  
+  console.log(`[DEBUG] ==========================================`);
+  console.log(`[DEBUG] Repo: ${owner}/${repo}`);
+  console.log(`[DEBUG] Time range: ${timeRange}, sinceDate: ${sinceDate}`);
+  console.log(`[DEBUG] Total commits: ${allCommits.length}`);
+  console.log(`[DEBUG] Contributors: ${contributors.size}`);
+  console.log(`[DEBUG] Active branches: ${activeBranches.length}`);
+  if (allCommits.length > 0) {
+    console.log(`[DEBUG] First commit: ${allCommits[0].commit.message.split('\n')[0]}`);
+    console.log(`[DEBUG] First commit date: ${allCommits[0].commit.author.date}`);
+  } else {
+    console.log(`[DEBUG] NO COMMITS FOUND!`);
+    console.log(`[DEBUG] Branches available: ${branches.length}`);
+    console.log(`[DEBUG] Primary branch: ${primaryBranch}`);
+  }
+  console.log(`[DEBUG] ==========================================`);
   
   // Generate management narrative from code changes
   const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 10);
