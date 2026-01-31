@@ -944,11 +944,24 @@ export default async function handler(req, res) {
   }
   
   try {
+    console.log('[API] Starting analysis...');
     const { repoUrl, timeRange } = req.body;
+    console.log(`[API] Repo: ${repoUrl}, Time: ${timeRange}`);
+    
     const { owner, repo } = parseGitHubUrl(repoUrl);
+    console.log(`[API] Parsed: ${owner}/${repo}`);
+    
     const data = await analyzeGitHubRepo(owner, repo, timeRange);
+    console.log(`[API] Analysis complete, sending response`);
+    
     res.status(200).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('[API] ERROR:', error);
+    console.error('[API] ERROR STACK:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'An error occurred during analysis',
+      error: error.toString()
+    });
   }
 }
