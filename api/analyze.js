@@ -17,11 +17,24 @@ async function githubRequest(url, params = {}) {
   const response = await fetch(fullUrl, { headers });
   
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || `GitHub API error: ${response.status}`);
+    let errorMessage = `GitHub API error: ${response.status}`;
+    try {
+      const error = await response.json();
+      errorMessage = error.message || errorMessage;
+    } catch (e) {
+      // If JSON parsing fails, use status text
+      errorMessage = response.statusText || errorMessage;
+    }
+    throw new Error(errorMessage);
   }
   
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    console.error(`[ERROR] Failed to parse JSON response from ${url}`);
+    console.error(`[ERROR] Parse error: ${error.message}`);
+    throw new Error(`Invalid JSON response from GitHub API: ${error.message}`);
+  }
 }
 
 function parseGitHubUrl(repoUrl) {
@@ -719,6 +732,10 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   const primaryBranch = repoInfo.default_branch;
   const branches = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/branches`, { per_page: 100 });
   
+  console.log(`[DEBUG] Primary branch from repo info: "${primaryBranch}"`);
+  console.log(`[DEBUG] Fetched ${branches.length} branches`);
+  console.log(`[DEBUG] First 5 branch names:`, branches.slice(0, 5).map(b => `"${b.name}"`).join(', '));
+  
   const activeBranches = [];
   const staleBranches = [];
   const branchCommitCounts = new Map();
@@ -735,6 +752,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   
   // Fetch primary branch first (most important, gets more data)
   const primaryBranchObj = branches.find(b => b.name === primaryBranch);
+  
+  if (!primaryBranchObj) {
+    console.log(`[DEBUG] WARNING: Could not find primary branch "${primaryBranch}" in branch list`);
+    console.log(`[DEBUG] All branch names:`, branches.map(b => b.name).join(', '));
+    // Try to fetch commits directly from the primary branch
+    console.log(`[DEBUG] Attempting direct commit fetch from ${primaryBranch}...`);
+  }
+  
   if (primaryBranchObj) {
     console.log(`[DEBUG] Fetching commits from primary branch: ${primaryBranch}`);
     let branchPage = 1;
@@ -816,8 +841,74 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
     console.log(`[DEBUG] Finished fetching primary branch. Total in map: ${commitMap.size}`);
   } else {
-    console.log(`[DEBUG] WARNING: Could not find primary branch object for: ${primaryBranch}`);
-  }
+    // Fallback: fetch commits directly using branch name even without branch object
+    console.log(`[DEBUG] Fallback: Fetching commits directly from branch "${primaryBranch}"...`);
+    
+    try {
+      let branchPage = 1;
+      while (branchPage <= 5) {
+        const params = { per_page: 100, page: branchPage, sha: primaryBranch };
+        
+        if (sinceDate) {
+          params.since = sinceDate;
+        }
+        
+        console.log(`[DEBUG] Fallback fetch page ${branchPage}...`);
+        const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
+        console.log(`[DEBUG] Fallback got ${commits.length} commits`);
+        
+        if (commits.length === 0 && branchPage === 1 && sinceDate) {
+          // Try without since filter
+          console.log(`[DEBUG] Fallback retry without since filter...`);
+          delete params.since;
+          const retryCommits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
+          console.log(`[DEBUG] Fallback retry got ${retryCommits.length} commits`);
+          
+          for (const commit of retryCommits) {
+            const commitDate = new Date(commit.commit.author.date);
+            const isInRange = !sinceDate || commitDate >= new Date(sinceDate);
+            
+            if (isInRange && !commitMap.has(commit.sha)) {
+              commitMap.set(commit.sha, { commit, branches: [primaryBranch] });
+              branchCommitCounts.set(primaryBranch, (branchCommitCounts.get(primaryBranch) || 0) + 1);
+              if (!branchLastSeen.has(primaryBranch) || commitDate > branchLastSeen.get(primaryBranch)) {
+                branchLastSeen.set(primaryBranch, commitDate);
+              }
+            }
+          }
+          
+          if (retryCommits.length < 100) break;
+          branchPage++;
+          continue;
+        }
+        
+        if (commits.length === 0) break;
+        
+        for (const commit of commits) {
+          const commitDate = new Date(commit.commit.author.date);
+          
+          if (!commitMap.has(commit.sha)) {
+            commitMap.set(commit.sha, { commit, branches: [primaryBranch] });
+            branchCommitCounts.set(primaryBranch, (branchCommitCounts.get(primaryBranch) || 0) + 1);
+            if (!branchLastSeen.has(primaryBranch) || commitDate > branchLastSeen.get(primaryBranch)) {
+              branchLastSeen.set(primaryBranch, commitDate);
+            }
+          }
+        }
+        
+        if (commits.length < 100) break;
+        branchPage++;
+      }
+      
+      // Add primary branch to active branches
+      if (commitMap.size > 0) {
+        activeBranches.push({ name: primaryBranch, commit: { sha: 'HEAD' } });
+      }
+      
+      console.log(`[DEBUG] Fallback finished. Total in map: ${commitMap.size}`);
+    } catch (error) {
+      console.log(`[DEBUG] Fallback error: ${error.message}`);
+    }
   
   // Fetch other branches (with time filter for efficiency)
   for (const branch of branches.slice(0, maxOtherBranches)) {
@@ -892,18 +983,48 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
         direction: 'desc'
       };
       
-      const prs = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, params);
-      if (prs.length === 0) break;
+      // Add retry logic for PR fetching
+      let retries = 0;
+      let prs = [];
+      
+      while (retries < 2) {
+        try {
+          prs = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, params);
+          console.log(`[DEBUG] Page ${page}: Fetched ${prs.length} PRs`);
+          break; // Success, exit retry loop
+        } catch (error) {
+          retries++;
+          console.log(`[DEBUG] PR fetch attempt ${retries} failed: ${error.message}`);
+          
+          if (retries >= 2) {
+            console.log(`[DEBUG] Giving up on PR page ${page} after ${retries} attempts`);
+            prs = []; // Give up and continue with what we have
+            break;
+          }
+          
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      if (prs.length === 0) {
+        console.log(`[DEBUG] No PRs on page ${page}, stopping pagination`);
+        break;
+      }
       
       pullRequests = pullRequests.concat(prs);
       
       // If we got less than 100, we've reached the end
-      if (prs.length < 100) break;
+      if (prs.length < 100) {
+        console.log(`[DEBUG] Got ${prs.length} PRs (less than 100), stopping pagination`);
+        break;
+      }
     }
     
     console.log(`[DEBUG] Fetched ${pullRequests.length} total PRs`);
   } catch (error) {
     console.log(`[DEBUG] Error fetching PRs: ${error.message}`);
+    console.log(`[DEBUG] Error stack: ${error.stack}`);
     pullRequests = [];
   }
   
