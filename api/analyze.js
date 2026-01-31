@@ -980,64 +980,49 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
   }
   
-  // Fetch recently merged PRs (change strategy: use 'all' state and filter for merged)
+  // Extract PRs from commit messages (more accurate for recent merges)
+  // Commit messages often contain "(#12345)" for PR numbers
   let pullRequests = [];
-  try {
-    console.log('[DEBUG] Fetching PRs...');
-    
-    // Fetch up to 5 pages of ALL PRs sorted by updated (500 total)
-    // This increases our chances of finding recently merged PRs
-    for (let page = 1; page <= 5; page++) {
-      const params = { 
-        state: 'all',  // Changed from 'closed' to 'all'
-        per_page: 100, 
-        page,
-        sort: 'updated',
-        direction: 'desc'
-      };
-      
-      // Add retry logic for PR fetching
-      let retries = 0;
-      let prs = [];
-      
-      while (retries < 2) {
-        try {
-          prs = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls`, params);
-          console.log(`[DEBUG] Page ${page}: Fetched ${prs.length} PRs`);
-          break; // Success, exit retry loop
-        } catch (error) {
-          retries++;
-          console.log(`[DEBUG] PR fetch attempt ${retries} failed: ${error.message}`);
-          
-          if (retries >= 2) {
-            console.log(`[DEBUG] Giving up on PR page ${page} after ${retries} attempts`);
-            prs = []; // Give up and continue with what we have
-            break;
-          }
-          
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
+  const prNumbers = new Set();
+  
+  console.log('[DEBUG] Extracting PR numbers from commits...');
+  
+  // Extract PR numbers from commit messages
+  for (const commit of allCommits) {
+    const message = commit.commit?.message || '';
+    // Match patterns like (#12345) or #12345 or PR #12345
+    const matches = message.match(/#(\d{4,6})/g);
+    if (matches) {
+      matches.forEach(match => {
+        const prNum = parseInt(match.replace('#', ''));
+        if (prNum > 1000) { // Filter out small numbers that might not be PRs
+          prNumbers.add(prNum);
         }
-      }
-      
-      if (prs.length === 0) {
-        console.log(`[DEBUG] No PRs on page ${page}, stopping pagination`);
-        break;
-      }
-      
-      pullRequests = pullRequests.concat(prs);
-      
-      // If we got less than 100, we've reached the end
-      if (prs.length < 100) {
-        console.log(`[DEBUG] Got ${prs.length} PRs (less than 100), stopping pagination`);
-        break;
-      }
+      });
     }
+  }
+  
+  console.log(`[DEBUG] Found ${prNumbers.size} unique PR numbers in commits`);
+  
+  // Fetch details for up to 50 PRs (to avoid rate limits)
+  const prNumbersArray = Array.from(prNumbers).slice(0, 50);
+  
+  try {
+    const prPromises = prNumbersArray.map(async (prNum) => {
+      try {
+        return await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNum}`);
+      } catch (error) {
+        console.log(`[DEBUG] Failed to fetch PR #${prNum}: ${error.message}`);
+        return null;
+      }
+    });
     
-    console.log(`[DEBUG] Fetched ${pullRequests.length} total PRs`);
+    const prResults = await Promise.all(prPromises);
+    pullRequests = prResults.filter(pr => pr !== null);
+    
+    console.log(`[DEBUG] Fetched ${pullRequests.length} PR details from commit messages`);
   } catch (error) {
-    console.log(`[DEBUG] Error fetching PRs: ${error.message}`);
-    console.log(`[DEBUG] Error stack: ${error.stack}`);
+    console.log(`[DEBUG] Error fetching PR details: ${error.message}`);
     pullRequests = [];
   }
   
