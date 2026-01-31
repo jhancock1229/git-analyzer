@@ -738,11 +738,14 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   if (primaryBranchObj) {
     console.log(`[DEBUG] Fetching commits from primary branch: ${primaryBranch}`);
     let branchPage = 1;
-    while (branchPage <= 5) { // Primary gets 5 pages (500 commits max in time range)
+    let attemptedWithSince = false;
+    let totalFetched = 0;
+    
+    while (branchPage <= 5) { // Primary gets 5 pages (500 commits max)
       const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
       
-      // CRITICAL: Add since parameter for date filtering on server side
-      if (sinceDate) {
+      // Try with since filter first
+      if (sinceDate && !attemptedWithSince) {
         params.since = sinceDate;
         console.log(`[DEBUG] Using since filter: ${sinceDate}`);
       }
@@ -752,7 +755,39 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
         const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
         console.log(`[DEBUG] Got ${commits.length} commits on page ${branchPage}`);
         
+        // If first page with since returns 0, try without since filter
+        if (commits.length === 0 && branchPage === 1 && sinceDate && !attemptedWithSince) {
+          console.log(`[DEBUG] No commits with since filter, retrying without it...`);
+          attemptedWithSince = true;
+          delete params.since;
+          const retryCommits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
+          console.log(`[DEBUG] Retry without since got ${retryCommits.length} commits`);
+          
+          if (retryCommits.length > 0) {
+            // Filter client-side by date
+            for (const commit of retryCommits) {
+              const commitDate = new Date(commit.commit.author.date);
+              const isInRange = !sinceDate || commitDate >= new Date(sinceDate);
+              
+              if (isInRange && !commitMap.has(commit.sha)) {
+                commitMap.set(commit.sha, { commit, branches: [primaryBranchObj.name] });
+                branchCommitCounts.set(primaryBranchObj.name, (branchCommitCounts.get(primaryBranchObj.name) || 0) + 1);
+                if (!branchLastSeen.has(primaryBranchObj.name) || commitDate > branchLastSeen.get(primaryBranchObj.name)) {
+                  branchLastSeen.set(primaryBranchObj.name, commitDate);
+                }
+                totalFetched++;
+              } else if (!isInRange) {
+                commitMap.get(commit.sha)?.branches.push(primaryBranchObj.name);
+              }
+            }
+            branchPage++;
+            continue;
+          }
+        }
+        
         if (commits.length === 0) break;
+        
+        totalFetched += commits.length;
         
         for (const commit of commits) {
           const commitDate = new Date(commit.commit.author.date);
