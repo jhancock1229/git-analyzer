@@ -210,50 +210,29 @@ function analyzePRActivity(mergedPRs) {
   return prInsights;
 }
 
-async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) {
+async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 30) {
   if (!recentCommits || recentCommits.length === 0) {
     return { narrative: 'No commits found in the selected time period.' };
   }
   
   console.log(`[NARRATIVE] Total commits available: ${recentCommits.length}`);
   
-  // Always generate narrative - even if we can't get detailed file info
   try {
-    // Try to get detailed commits with file changes
-    const commitsToAnalyze = recentCommits.slice(0, Math.min(limit, recentCommits.length));
+    // Get commit messages and metadata for LLM analysis
+    const commitsForAnalysis = recentCommits.slice(0, Math.min(limit, recentCommits.length));
     
-    const commitDetails = await Promise.allSettled(
-      commitsToAnalyze.map(commit => 
-        githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${commit.sha}`)
-          .catch(() => null)
-      )
-    );
+    // Format commits for LLM
+    const commitSummary = commitsForAnalysis.map((commit, idx) => {
+      const msg = commit.commit?.message || commit.message || '';
+      const author = commit.commit?.author?.name || commit.author?.name || 'Unknown';
+      const date = commit.commit?.author?.date || commit.author?.date || '';
+      return `${idx + 1}. ${msg.split('\n')[0]} (by ${author})`;
+    }).join('\n');
     
-    const detailedCommits = [];
-    commitDetails.forEach((result) => {
-      if (result.status !== 'fulfilled' || !result.value?.files) return;
-      
-      const commit = result.value;
-      detailedCommits.push({
-        message: commit.commit.message.split('\n')[0],
-        author: commit.commit.author.name,
-        date: new Date(commit.commit.author.date),
-        sha: commit.sha.substring(0, 7),
-        files: commit.files.map(f => ({
-          filename: f.filename,
-          status: f.status,
-          additions: f.additions || 0,
-          deletions: f.deletions || 0
-        }))
-      });
-    });
+    // Call Claude API to generate summary
+    console.log(`[NARRATIVE] Calling Claude API to analyze ${commitsForAnalysis.length} commits...`);
     
-    console.log(`[NARRATIVE] Got ${detailedCommits.length} detailed commits`);
-    
-    // Generate narrative - use detailed commits if available, otherwise use basic list
-    const narrative = detailedCommits.length > 0 
-      ? generateDetailedNarrative(detailedCommits, recentCommits, owner, repo)
-      : generateBasicNarrative(recentCommits, owner, repo);
+    const narrative = await generateLLMSummary(owner, repo, commitSummary, recentCommits.length);
     
     return { narrative };
     
@@ -261,6 +240,56 @@ async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 10) 
     console.error('[NARRATIVE] Error:', error);
     // Fallback to basic narrative
     return { narrative: generateBasicNarrative(recentCommits, owner, repo) };
+  }
+}
+
+async function generateLLMSummary(owner, repo, commitSummary, totalCommits) {
+  try {
+    const prompt = `You are analyzing a GitHub repository: ${owner}/${repo}
+
+Here are the ${totalCommits} most recent commits:
+
+${commitSummary}
+
+Please write a clear, executive-friendly summary of what the development team has been working on. Focus on:
+1. Major themes and work areas (e.g., GPU support, performance optimization, bug fixes)
+2. Specific features or improvements being built
+3. The overall direction and focus of development
+
+Format your response in markdown with clear sections. Be specific and reference actual commit messages when relevant. Write in a professional but conversational tone. Keep it concise (300-500 words).`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Anthropic API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const summary = data.content[0].text;
+    
+    console.log('[NARRATIVE] LLM summary generated successfully');
+    
+    return summary;
+    
+  } catch (error) {
+    console.error('[NARRATIVE] LLM generation failed:', error);
+    // Fallback to basic categorization
+    return `# Development Activity: ${owner}/${repo}\n\n**${totalCommits} commits** in this period\n\nUnable to generate detailed summary. Please try again.`;
   }
 }
 
@@ -908,7 +937,7 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
   console.log(`[DEBUG] ==========================================`);
   
   // Generate management narrative from code changes
-  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 10);
+  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 30);
   
   // Generate branch activity report
   const branchActivity = generateBranchActivityReport(activeBranches, branchCommitCounts, primaryBranch, timeRange);
