@@ -980,15 +980,16 @@ async function analyzeGitHubRepo(owner, repo, timeRange) {
     }
   }
   
-  // Fetch recently closed PRs (with pagination for active repos)
+  // Fetch recently merged PRs (change strategy: use 'all' state and filter for merged)
   let pullRequests = [];
   try {
     console.log('[DEBUG] Fetching PRs...');
     
-    // Fetch up to 3 pages of recently closed PRs (300 total)
-    for (let page = 1; page <= 3; page++) {
+    // Fetch up to 5 pages of ALL PRs sorted by updated (500 total)
+    // This increases our chances of finding recently merged PRs
+    for (let page = 1; page <= 5; page++) {
       const params = { 
-        state: 'closed', 
+        state: 'all',  // Changed from 'closed' to 'all'
         per_page: 100, 
         page,
         sort: 'updated',
