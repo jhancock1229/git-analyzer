@@ -1,31 +1,24 @@
-// Simple in-memory cache (will reset on serverless function cold starts)
 const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
-// Rate limiting state
 const rateLimitState = {
   lastRequestTime: 0,
-  requestCount: 0,
   resetTime: 0,
   isThrottled: false
 };
 
-const MIN_REQUEST_INTERVAL = 1000; // Minimum 1 second between requests
+const MIN_REQUEST_INTERVAL = 1000;
 
-// Sleep utility for rate limiting
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Exponential backoff retry logic
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // Implement rate limiting throttle
       const now = Date.now();
       const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
       
       if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
         const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-        console.log(`[THROTTLE] Waiting ${waitTime}ms before next request`);
         await sleep(waitTime);
       }
       
@@ -33,24 +26,17 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
       
       const response = await fetch(url, options);
       
-      // Check rate limit headers
       const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '999');
       const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0') * 1000;
       
-      console.log(`[RATE LIMIT] Remaining: ${remaining}, Reset: ${new Date(resetTime).toISOString()}`);
-      
-      // If we're getting low on requests, throttle more aggressively
       if (remaining < 10) {
         rateLimitState.isThrottled = true;
         rateLimitState.resetTime = resetTime;
-        console.log('[RATE LIMIT] Low on requests, entering throttled mode');
       }
       
       if (response.status === 403 || response.status === 429) {
         const retryAfter = response.headers.get('retry-after');
         const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
-        
-        console.log(`[RETRY] Rate limited, waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`);
         
         if (attempt < maxRetries - 1) {
           await sleep(waitTime);
@@ -72,13 +58,11 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
       }
       
       const waitTime = Math.pow(2, attempt) * 1000;
-      console.log(`[RETRY] Error on attempt ${attempt + 1}, waiting ${waitTime}ms`);
       await sleep(waitTime);
     }
   }
 }
 
-// Cache helper functions
 function getCacheKey(owner, repo, timeRange) {
   return `${owner}/${repo}/${timeRange}`;
 }
@@ -93,7 +77,6 @@ function getFromCache(key) {
     return null;
   }
   
-  console.log(`[CACHE HIT] Returning cached data (age: ${Math.round(age / 1000)}s)`);
   return cached.data;
 }
 
@@ -102,11 +85,9 @@ function setCache(key, data) {
     data,
     timestamp: Date.now()
   });
-  console.log(`[CACHE] Stored data for key: ${key}`);
 }
 
 module.exports = async function handler(req, res) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -126,7 +107,6 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Parse repository URL
     const urlPattern = /github\.com\/([^\/]+)\/([^\/]+)/;
     const match = repoUrl.match(urlPattern);
 
@@ -137,25 +117,22 @@ module.exports = async function handler(req, res) {
     const [, owner, repo] = match;
     const cleanRepo = repo.replace(/\.git$/, '');
 
-    // Check cache first
     const cacheKey = getCacheKey(owner, cleanRepo, timeRange);
     const cachedData = getFromCache(cacheKey);
     
     if (cachedData) {
       return res.status(200).json({
         ...cachedData,
-        fromCache: true,
-        message: 'Data served from cache (updated within last 5 minutes)'
+        fromCache: true
       });
     }
 
-    // Check if we're in throttled mode
     if (rateLimitState.isThrottled) {
       const now = Date.now();
       if (now < rateLimitState.resetTime) {
         const waitSeconds = Math.ceil((rateLimitState.resetTime - now) / 1000);
         return res.status(429).json({
-          error: `Rate limit protection active. Please wait ${waitSeconds} seconds before trying again.`,
+          error: `Rate limit protection active. Please wait ${waitSeconds} seconds.`,
           retryAfter: waitSeconds
         });
       } else {
@@ -165,19 +142,9 @@ module.exports = async function handler(req, res) {
 
     const token = process.env.GITHUB_TOKEN;
     
-    console.log('[DEBUG] Environment check:', {
-      hasToken: !!token,
-      tokenLength: token ? token.length : 0,
-      tokenPrefix: token ? token.substring(0, 4) : 'none',
-      allEnvKeys: Object.keys(process.env).filter(k => k.includes('GITHUB'))
-    });
-    
     if (!token) {
       return res.status(500).json({ 
-        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.',
-        debug: {
-          availableEnvVars: Object.keys(process.env).filter(k => k.includes('GITHUB'))
-        }
+        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.'
       });
     }
 
@@ -187,7 +154,6 @@ module.exports = async function handler(req, res) {
       'User-Agent': 'Git-Analyzer-App'
     };
 
-    // Calculate date range
     const now = new Date();
     const timeRanges = {
       'day': 1,
@@ -203,23 +169,17 @@ module.exports = async function handler(req, res) {
     const since = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
     const sinceISO = since.toISOString();
 
-    console.log(`[START] Analyzing ${owner}/${cleanRepo} for ${timeRange} (since ${sinceISO})`);
-
-    // Fetch repository info with retry
     const repoResponse = await fetchWithRetry(
       `https://api.github.com/repos/${owner}/${cleanRepo}`,
       { headers }
     );
     const repoInfo = await repoResponse.json();
 
-    // Fetch commits with pagination (limited to 335 to avoid rate limits)
     let allCommits = [];
     let page = 1;
     const maxCommits = 335;
 
     while (allCommits.length < maxCommits) {
-      console.log(`[COMMITS] Fetching page ${page}...`);
-      
       const commitsResponse = await fetchWithRetry(
         `https://api.github.com/repos/${owner}/${cleanRepo}/commits?since=${sinceISO}&per_page=100&page=${page}`,
         { headers }
@@ -238,14 +198,9 @@ module.exports = async function handler(req, res) {
       }
       
       page++;
-      
-      // Add small delay between pagination requests
       await sleep(500);
     }
 
-    console.log(`[COMMITS] Fetched ${allCommits.length} total commits`);
-
-    // Extract PR numbers from commits (efficient way to get merged PRs)
     const prNumbers = new Set();
     allCommits.forEach(commit => {
       const message = commit.commit.message;
@@ -255,9 +210,6 @@ module.exports = async function handler(req, res) {
       }
     });
 
-    console.log(`[PRs] Extracted ${prNumbers.size} PR numbers from commits`);
-
-    // Fetch PR details (limit to 50 to avoid rate limits)
     let pullRequests = [];
     const prNumbersArray = Array.from(prNumbers).slice(0, 50);
     
@@ -271,17 +223,13 @@ module.exports = async function handler(req, res) {
         const pr = await prResponse.json();
         pullRequests.push(pr);
         
-        // Small delay between PR requests
         await sleep(300);
         
       } catch (error) {
-        console.log(`[PR] Failed to fetch PR #${prNumber}: ${error.message}`);
+        console.log(`Failed to fetch PR #${prNumber}`);
       }
     }
 
-    console.log(`[PRs] Fetched details for ${pullRequests.length} PRs`);
-
-    // Analyze commit messages
     function analyzeCommitMessages(commits) {
       const categories = {
         features: 0,
@@ -295,7 +243,6 @@ module.exports = async function handler(req, res) {
       };
 
       const areas = {};
-      const keywords = {};
 
       commits.forEach(commit => {
         const msg = commit.commit.message.toLowerCase();
@@ -323,28 +270,20 @@ module.exports = async function handler(req, res) {
           const area = areaMatch[1];
           areas[area] = (areas[area] || 0) + 1;
         }
-
-        const words = msg.split(/\s+/).filter(w => w.length > 4);
-        words.forEach(word => {
-          keywords[word] = (keywords[word] || 0) + 1;
-        });
       });
 
-      return { categories, areas, keywords };
+      return { categories, areas };
     }
 
     const analysis = analyzeCommitMessages(allCommits);
 
-    // Process contributor data
     const contributors = {};
     allCommits.forEach(commit => {
       const author = commit.commit.author.name || commit.commit.author.email;
       if (!contributors[author]) {
         contributors[author] = {
           name: author,
-          commits: 0,
-          additions: 0,
-          deletions: 0
+          commits: 0
         };
       }
       contributors[author].commits++;
@@ -353,7 +292,6 @@ module.exports = async function handler(req, res) {
     const sortedContributors = Object.values(contributors)
       .sort((a, b) => b.commits - a.commits);
 
-    // Generate conversational summary
     const totalDevelopers = sortedContributors.length;
     const totalCommits = allCommits.length;
     const { features, bugFixes, tests } = analysis.categories;
@@ -397,13 +335,11 @@ module.exports = async function handler(req, res) {
 
     summary += '.';
 
-    // Filter merged PRs
     const mergedPRs = pullRequests.filter(pr => 
       pr.merged_at && 
       new Date(pr.merged_at) >= since
     );
 
-    // Prepare response data
     const responseData = {
       repository: {
         name: repoInfo.full_name,
@@ -444,24 +380,22 @@ module.exports = async function handler(req, res) {
       }))
     };
 
-    // Store in cache
     setCache(cacheKey, responseData);
 
     return res.status(200).json(responseData);
 
   } catch (error) {
-    console.error('Error analyzing repository:', error);
+    console.error('Error:', error);
     
     if (error.message.includes('Rate limit')) {
       return res.status(429).json({ 
         error: error.message,
-        retryAfter: 300 // Suggest waiting 5 minutes
+        retryAfter: 300
       });
     }
     
     return res.status(500).json({ 
-      error: error.message || 'Failed to analyze repository',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message || 'Failed to analyze repository'
     });
   }
-}
+};
