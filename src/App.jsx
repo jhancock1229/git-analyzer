@@ -141,7 +141,9 @@ function App() {
 
       <form onSubmit={handleSubmit} className="search-form">
         <div className="form-group">
+          <label htmlFor="repo-url">REPOSITORY URL</label>
           <input
+            id="repo-url"
             type="text"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
@@ -152,25 +154,30 @@ function App() {
         </div>
 
         <div className="form-row">
-          <select 
-            value={timeRange} 
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="time-select"
-            disabled={loading || retryCountdown > 0}
-          >
-            {timeRanges.map(range => (
-              <option key={range.value} value={range.value}>
-                {range.label}
-              </option>
-            ))}
-          </select>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label htmlFor="time-range">TIME RANGE</label>
+            <select 
+              id="time-range"
+              value={timeRange} 
+              onChange={(e) => setTimeRange(e.target.value)}
+              className="time-select"
+              disabled={loading || retryCountdown > 0}
+            >
+              {timeRanges.map(range => (
+                <option key={range.value} value={range.value}>
+                  {range.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <button 
             type="submit" 
             disabled={loading || retryCountdown > 0}
             className="analyze-btn"
+            style={{ alignSelf: 'end' }}
           >
-            {loading ? '⏳ Analyzing...' : retryCountdown > 0 ? `⏰ Wait ${retryCountdown}s` : '🚀 Analyze'}
+            {loading ? 'Analyzing...' : retryCountdown > 0 ? `Wait ${retryCountdown}s` : 'ANALYZE REPOSITORY'}
           </button>
         </div>
       </form>
