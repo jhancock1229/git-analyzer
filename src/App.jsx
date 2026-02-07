@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { InfoModal, DiagramModal, SortableListModal } from './components/Modal';
-import BranchDiagram from './components/BranchDiagram';
+import React, { useState, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import './App.css';
+
+const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0', '#ffb347'];
 
 function App() {
   const [repoUrl, setRepoUrl] = useState('');
@@ -8,10 +10,9 @@ function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(null);
-  const [repoInfo, setRepoInfo] = useState(null);
-  const [showStaleBranches, setShowStaleBranches] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [rateLimitInfo, setRateLimitInfo] = useState(null);
+  const [cachedResult, setCachedResult] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
 
   const timeRanges = [
     { value: 'day', label: 'Last 24 Hours' },
@@ -23,1226 +24,321 @@ function App() {
     { value: 'all', label: 'All Time' }
   ];
 
+  // Countdown timer for rate limit retry
+  useEffect(() => {
+    if (retryCountdown > 0) {
+      const timer = setTimeout(() => {
+        setRetryCountdown(retryCountdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [retryCountdown]);
+
   const analyzeRepository = async () => {
     if (!repoUrl.trim()) {
       setError('Please enter a repository URL');
       return;
     }
-    
+
     setLoading(true);
     setError(null);
+    setRateLimitInfo(null);
+    setCachedResult(false);
 
     try {
-      const response = await fetch('/api/analyze', {
+      const apiUrl = import.meta.env.PROD 
+        ? '/api/analyze'
+        : 'http://localhost:3001/api/analyze';
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl, timeRange })
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: repoUrl.trim(),
+          timeRange
+        })
       });
-      
-      if (!response.ok) throw new Error('Failed to analyze');
-      
+
       const result = await response.json();
-      
-      // Extract owner/repo from URL
-      const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/\.]+)/);
-      if (match) {
-        const info = { owner: match[1], repo: match[2] };
-        setRepoInfo(info);
-        window.repoInfo = info;
+
+      if (response.status === 429) {
+        // Rate limit hit
+        const retryAfter = result.retryAfter || 300;
+        setRetryCountdown(retryAfter);
+        setError(result.error || 'Rate limit reached. Please wait before trying again.');
+        setRateLimitInfo({
+          limited: true,
+          retryAfter,
+          message: 'To protect against API limits, please wait before making another request.'
+        });
+        setLoading(false);
+        return;
       }
-      
-      setData(result.data);
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to analyze repository');
+      }
+
+      setData(result);
+      setCachedResult(result.fromCache || false);
+
+      if (result.fromCache) {
+        setRateLimitInfo({
+          limited: false,
+          cached: true,
+          message: 'Results served from cache (no API calls used)'
+        });
+      }
+
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'An error occurred while analyzing the repository');
+      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const renderModal = () => {
-    if (!showModal) return null;
-
-    console.log('Rendering modal with type:', showModal.type, showModal); // Debug log
-
-    if (showModal.type === 'info') {
-      return (
-        <InfoModal
-          title={showModal.title}
-          explanation={showModal.explanation}
-          criteria={showModal.criteria}
-          onClose={() => setShowModal(null)}
-        />
-      );
-    }
-
-    if (showModal.type === 'diagram') {
-      console.log('Rendering DiagramModal with commits:', showModal.data?.length); // Debug log
-      return (
-        <DiagramModal
-          title={showModal.title}
-          commits={showModal.data}
-          primaryBranch={showModal.primaryBranch}
-          onClose={() => setShowModal(null)}
-        />
-      );
-    }
-
-    // Default to SortableListModal for other types
-    return (
-      <SortableListModal darkMode={darkMode}
-        title={showModal.title}
-        items={showModal.data}
-        onClose={() => setShowModal(null)}
-      />
-    );
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    analyzeRepository();
   };
 
-  const colors = darkMode ? {
-    bg: '#1A1A1A',
-    text: '#E8E8E8',
-    cardBg: '#2D2D2D',
-    cardBorder: '#404040',
-    inputBg: '#2D2D2D',
-    inputBorder: '#404040',
-    buttonBg: '#E8E8E8',
-    buttonText: '#1A1A1A',
-    primary: '#0077B6',
-    infoBg: '#1E3A4F',
-    infoBorder: '#2E5A7F',
-    headerBg: '#0A0A0A',
-    modalBg: '#2D2D2D',
-    headerText: '#E8E8E8'
-  } : {
-    bg: '#FAF9F6',
-    text: '#1A1A1A',
-    cardBg: '#FFFFFF',
-    cardBorder: '#E8E8E8',
-    inputBg: '#FFFFFF',
-    inputBorder: '#E8E8E8',
-    buttonBg: '#1A1A1A',
-    buttonText: '#FAF9F6',
-    primary: '#0077B6',
-    infoBg: '#F0F8FF',
-    infoBorder: '#0077B6',
-    headerBg: '#1A1A1A',
-    modalBg: '#FFFFFF',
-    headerText: '#FAF9F6'
+  const formatNumber = (num) => {
+    return new Intl.NumberFormat().format(num);
+  };
+
+  const getCategoryChartData = () => {
+    if (!data?.stats?.categories) return [];
+    
+    const categories = data.stats.categories;
+    return [
+      { name: 'Features', value: categories.features, color: COLORS[0] },
+      { name: 'Bug Fixes', value: categories.bugFixes, color: COLORS[1] },
+      { name: 'Performance', value: categories.performance, color: COLORS[2] },
+      { name: 'Security', value: categories.security, color: COLORS[3] },
+      { name: 'Tests', value: categories.tests, color: COLORS[4] },
+      { name: 'Docs', value: categories.docs, color: COLORS[5] },
+      { name: 'Refactor', value: categories.refactor, color: COLORS[6] },
+    ].filter(item => item.value > 0);
+  };
+
+  const getContributorChartData = () => {
+    if (!data?.contributors) return [];
+    return data.contributors.slice(0, 8).map(c => ({
+      name: c.name.split(' ')[0] || c.name,
+      commits: c.commits
+    }));
   };
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 20px', background: colors.bg, transition: 'background-color 0.3s ease' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', position: 'relative' }}>
-        {/* Dark mode toggle */}
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          style={{
-            position: 'absolute',
-            top: '0',
-            right: '0',
-            background: 'transparent',
-            border: `2px solid ${colors.text}`,
-            color: colors.text,
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontFamily: 'IBM Plex Mono, monospace',
-            transition: 'all 0.2s',
-            zIndex: 1000
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.text;
-            e.currentTarget.style.color = colors.bg;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = colors.text;
-          }}
-        >
-          {darkMode ? '☀️ Light' : '🌙 Dark'}
-        </button>
-        
-        {/* Header */}
-        <div style={{ marginBottom: '40px', borderBottom: `3px solid ${colors.text}`, paddingBottom: '24px' }}>
-          <h1 style={{ 
-            margin: '0 0 12px', 
-            fontSize: '48px', 
-            fontWeight: '600', 
-            fontFamily: 'Literata, serif',
-            letterSpacing: '-1px',
-            color: colors.text
-          }}>
-            Git Repository Analyzer
-          </h1>
-          <p style={{ margin: 0, fontSize: '15px', color: colors.text, letterSpacing: '0.5px' }}>
-            ANALYZE ANY GIT REPOSITORY — SEE WHO'S WORKING ON WHAT
-          </p>
+    <div className="app">
+      <div className="header">
+        <h1>🔍 Git Repository Analyzer</h1>
+        <p>Visualize repository activity and contributions</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="search-form">
+        <div className="form-group">
+          <input
+            type="text"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="Enter GitHub repository URL (e.g., https://github.com/facebook/react)"
+            className="repo-input"
+            disabled={loading || retryCountdown > 0}
+          />
         </div>
 
-        {/* Input Section */}
-        <div style={{ 
-          background: colors.cardBg, 
-          border: `2px solid ${colors.cardBorder}`, 
-          padding: '32px', 
-          marginBottom: '40px',
-          borderRadius: '8px'
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', marginBottom: '24px' }}>
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '13px', 
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '1px'
-              }}>
-                Repository URL
-              </label>
-              <input
-                type="text"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                placeholder="https://github.com/username/repository"
-                style={{ 
-                  width: '100%', 
-                  padding: '14px', 
-                  fontSize: '15px', 
-                  border: `2px solid ${colors.cardBorder}`,
-                  background: colors.inputBg,
-                  color: colors.text,
-                  fontFamily: 'inherit',
-                  outline: 'none'
-                }}
-                onFocus={(e) => e.target.style.borderColor = colors.primary}
-                onBlur={(e) => e.target.style.borderColor = colors.cardBorder}
-              />
+        <div className="form-row">
+          <select 
+            value={timeRange} 
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="time-select"
+            disabled={loading || retryCountdown > 0}
+          >
+            {timeRanges.map(range => (
+              <option key={range.value} value={range.value}>
+                {range.label}
+              </option>
+            ))}
+          </select>
+
+          <button 
+            type="submit" 
+            disabled={loading || retryCountdown > 0}
+            className="analyze-btn"
+          >
+            {loading ? '⏳ Analyzing...' : retryCountdown > 0 ? `⏰ Wait ${retryCountdown}s` : '🚀 Analyze'}
+          </button>
+        </div>
+      </form>
+
+      {rateLimitInfo && (
+        <div className={`rate-limit-info ${rateLimitInfo.limited ? 'warning' : 'info'}`}>
+          <strong>{rateLimitInfo.limited ? '⚠️ Rate Limit Protection Active' : '✅ Cache Hit'}</strong>
+          <p>{rateLimitInfo.message}</p>
+          {rateLimitInfo.limited && retryCountdown > 0 && (
+            <p className="countdown">Please wait {retryCountdown} seconds before trying again.</p>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          <strong>❌ Error:</strong> {error}
+          {retryCountdown === 0 && (
+            <p className="error-hint">
+              💡 Tip: If you're hitting rate limits, try waiting a few minutes between requests.
+            </p>
+          )}
+        </div>
+      )}
+
+      {loading && (
+        <div className="loading">
+          <div className="spinner"></div>
+          <p>Fetching repository data...</p>
+          <p className="loading-subtext">This may take a moment for large repositories</p>
+        </div>
+      )}
+
+      {data && !loading && (
+        <div className="results">
+          {cachedResult && (
+            <div className="cache-notice">
+              ⚡ Results loaded from cache • Updated within the last 5 minutes
             </div>
-            
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '8px', 
-                fontSize: '13px', 
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '1px'
-              }}>
-                Time Range
-              </label>
-              <select
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
-                style={{ 
-                  padding: '14px 40px 14px 14px', 
-                  fontSize: '15px', 
-                  border: `2px solid ${colors.cardBorder}`,
-                  background: colors.inputBg,
-                  color: colors.text,
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  minWidth: '200px'
-                }}
-              >
-                {timeRanges.map(range => (
-                  <option key={range.value} value={range.value}>
-                    {range.label}
-                  </option>
-                ))}
-              </select>
+          )}
+
+          <div className="repo-header">
+            <h2>
+              <a href={data.repository.url} target="_blank" rel="noopener noreferrer">
+                {data.repository.name}
+              </a>
+            </h2>
+            {data.repository.description && (
+              <p className="repo-description">{data.repository.description}</p>
+            )}
+            <div className="repo-stats">
+              <span>⭐ {formatNumber(data.repository.stars)} stars</span>
+              <span>🔄 {formatNumber(data.repository.forks)} forks</span>
+              <span>📝 {formatNumber(data.repository.openIssues)} open issues</span>
+              {data.repository.language && (
+                <span>💻 {data.repository.language}</span>
+              )}
             </div>
           </div>
 
-          <button
-            onClick={analyzeRepository}
-            disabled={loading}
-            style={{ 
-              background: colors.buttonBg, 
-              color: colors.buttonText, 
-              border: 'none',
-              padding: '14px 32px', 
-              fontSize: '15px', 
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '0.5px',
-              transition: 'all 0.2s',
-              opacity: loading ? 0.6 : 1,
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}
-          >
-            {loading && (
-              <span style={{
-                display: 'inline-block',
-                width: '16px',
-                height: '16px',
-                border: '2px solid transparent',
-                borderTopColor: colors.buttonText,
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite'
-              }} />
-            )}
-            {loading ? 'ANALYZING...' : 'ANALYZE REPOSITORY'}
-            <style>{`
-              @keyframes spin {
-                to { transform: rotate(360deg); }
-              }
-            `}</style>
-          </button>
+          <div className="summary-card">
+            <h3>📊 Summary</h3>
+            <p className="summary-text">{data.summary}</p>
+            <div className="summary-stats">
+              <div className="stat">
+                <div className="stat-value">{formatNumber(data.stats.totalCommits)}</div>
+                <div className="stat-label">Commits</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value">{formatNumber(data.stats.totalContributors)}</div>
+                <div className="stat-label">Contributors</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value">{formatNumber(data.stats.totalPRs)}</div>
+                <div className="stat-label">Merged PRs</div>
+              </div>
+            </div>
+          </div>
 
-          {error && (
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px', 
-              background: '#FFE5E5',
-              border: '2px solid #C9184A', 
-              color: '#8B0000',
-              fontSize: '14px',
-              borderRadius: '6px'
-            }}>
-              Error: {error}
+          <div className="charts-grid">
+            <div className="chart-card">
+              <h3>📈 Work Categories</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={getCategoryChartData()}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {getCategoryChartData().map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="chart-card">
+              <h3>👥 Top Contributors</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={getContributorChartData()}>
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="commits" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {data.stats.topAreas && data.stats.topAreas.length > 0 && (
+            <div className="areas-card">
+              <h3>🎯 Active Areas</h3>
+              <div className="areas-list">
+                {data.stats.topAreas.map((area, index) => (
+                  <span key={index} className="area-tag">{area}</span>
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Results */}
-        {data && (
-          <>
-            {/* Activity Summary */}
-            {data.activitySummary && (
-              <div style={{
-                background: '#F0F8FF',
-                border: '2px solid #0077B6',
-                borderRadius: '8px',
-                padding: '24px 32px',
-                marginBottom: '40px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '12px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>📊</span>
-                  <h3 style={{
-                    margin: 0,
-                    fontSize: '18px',
-                    fontWeight: '600',
-                    color: '#0077B6',
-                    fontFamily: 'Literata, serif'
-                  }}>
-                    Activity Summary
-                  </h3>
-                </div>
-                <div style={{
-                  margin: 0,
-                  fontSize: '15px',
-                  lineHeight: '1.8',
-                  color: '#333',
-                  fontFamily: 'IBM Plex Mono',
-                  whiteSpace: 'pre-wrap'
-                }}>
-                  {data.activitySummary.split('\n').map((line, idx) => {
-                    // Handle bold markdown (**text**)
-                    if (line.includes('**')) {
-                      const parts = line.split(/\*\*(.*?)\*\*/g);
-                      return (
-                        <div key={idx} style={{ marginBottom: line.startsWith('   ') ? '4px' : '12px' }}>
-                          {parts.map((part, i) => 
-                            i % 2 === 1 ? <strong key={i}>{part}</strong> : part
-                          )}
-                        </div>
-                      );
-                    }
-                    return <div key={idx} style={{ marginBottom: line.startsWith('   ') ? '4px' : '12px' }}>{line || '\u00A0'}</div>;
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Most Recent Commit Details */}
-            {data.recentCommitAnalysis && (
-              <div style={{
-                background: colors.cardBg,
-                border: `2px solid ${colors.cardBorder}`,
-                borderRadius: '8px',
-                padding: '24px 32px',
-                marginBottom: '40px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '16px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🔄</span>
-                  <h3 style={{
-                    margin: 0,
-                    fontSize: '18px',
-                    fontWeight: '600',
-                    color: colors.text,
-                    fontFamily: 'Literata, serif'
-                  }}>
-                    Most Recent Change
-                  </h3>
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    color: colors.text,
-                    marginBottom: '8px'
-                  }}>
-                    {data.recentCommitAnalysis.humanDescription}
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    color: colors.text,
-                    opacity: 0.7,
-                    marginBottom: '12px'
-                  }}>
-                    by {data.recentCommitAnalysis.author} • {new Date(data.recentCommitAnalysis.date).toLocaleString()}
-                  </div>
-                </div>
-
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                  gap: '12px',
-                  marginBottom: '16px'
-                }}>
-                  <div style={{
-                    padding: '12px',
-                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                    borderRadius: '6px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#00AA00' }}>
-                      +{data.recentCommitAnalysis.additions}
-                    </div>
-                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
-                      additions
-                    </div>
-                  </div>
-                  <div style={{
-                    padding: '12px',
-                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                    borderRadius: '6px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#DD0000' }}>
-                      -{data.recentCommitAnalysis.deletions}
-                    </div>
-                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
-                      deletions
-                    </div>
-                  </div>
-                  <div style={{
-                    padding: '12px',
-                    background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                    borderRadius: '6px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: colors.text }}>
-                      {data.recentCommitAnalysis.filesChanged}
-                    </div>
-                    <div style={{ fontSize: '12px', color: colors.text, opacity: 0.7 }}>
-                      files changed
-                    </div>
-                  </div>
-                </div>
-
-                {data.recentCommitAnalysis.changes.length > 0 && (
-                  <details style={{ marginTop: '16px' }}>
-                    <summary style={{
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      color: colors.text,
-                      padding: '8px 0'
-                    }}>
-                      View changed files ({data.recentCommitAnalysis.changes.length})
-                    </summary>
-                    <div style={{
-                      marginTop: '12px',
-                      maxHeight: '300px',
-                      overflowY: 'auto',
-                      fontSize: '13px',
-                      fontFamily: 'IBM Plex Mono, monospace'
-                    }}>
-                      {data.recentCommitAnalysis.changes.map((change, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            padding: '8px',
-                            marginBottom: '4px',
-                            background: darkMode ? '#2D2D2D' : '#F5F5F5',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}
-                        >
-                          <span style={{ color: colors.text }}>
-                            {change.status === 'added' && '✅ '}
-                            {change.status === 'removed' && '❌ '}
-                            {change.status === 'modified' && '✏️ '}
-                            {change.filename}
-                          </span>
-                          <span style={{ color: colors.text, opacity: 0.6, fontSize: '12px' }}>
-                            <span style={{ color: '#00AA00' }}>+{change.additions}</span>
-                            {' '}
-                            <span style={{ color: '#DD0000' }}>-{change.deletions}</span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-              </div>
-            )}
-
-            {/* CI/CD & Engineering Tools */}
-            {data.cicdTools && (
-              <div style={{
-                background: colors.cardBg,
-                border: `2px solid ${colors.cardBorder}`,
-                borderRadius: '8px',
-                padding: '32px',
-                marginBottom: '40px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '24px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🔧</span>
-                  <h3 style={{
-                    margin: 0,
-                    fontSize: '20px',
-                    fontWeight: '600',
-                    color: colors.text,
-                    fontFamily: 'Literata, serif'
-                  }}>
-                    Engineering Practices
-                  </h3>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-                  {/* CI/CD */}
-                  {data.cicdTools.cicd.length > 0 && data.cicdTools.cicd.map((tool, idx) => (
-                    <a
-                      key={idx}
-                      href={tool.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        ⚙️ CI/CD Pipeline
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {tool.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {tool.path}
-                      </div>
+          <div className="details-grid">
+            <div className="detail-card">
+              <h3>📝 Recent Commits</h3>
+              <div className="commits-list">
+                {data.recentCommits.map((commit, index) => (
+                  <div key={index} className="commit-item">
+                    <a href={commit.url} target="_blank" rel="noopener noreferrer" className="commit-sha">
+                      {commit.sha}
                     </a>
-                  ))}
-
-                  {/* Containers */}
-                  {data.cicdTools.containers.length > 0 && data.cicdTools.containers.map((container, idx) => (
-                    <a
-                      key={idx}
-                      href={container.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        🐳 Containerization
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {container.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {container.path}
-                      </div>
-                    </a>
-                  ))}
-
-                  {/* Testing */}
-                  {data.cicdTools.testing.length > 0 && data.cicdTools.testing.map((test, idx) => (
-                    <a
-                      key={idx}
-                      href={test.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        ✅ Testing
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {test.framework}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {test.file}
-                      </div>
-                    </a>
-                  ))}
-
-                  {/* Coverage */}
-                  {data.cicdTools.coverage.length > 0 && data.cicdTools.coverage.map((cov, idx) => (
-                    <a
-                      key={idx}
-                      href={cov.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        📊 Code Coverage
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {cov.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {cov.path}
-                      </div>
-                    </a>
-                  ))}
-
-                  {/* Linting */}
-                  {data.cicdTools.linting.length > 0 && data.cicdTools.linting.map((lint, idx) => (
-                    <a
-                      key={idx}
-                      href={lint.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        🔍 Code Linting
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {lint.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {lint.path}
-                      </div>
-                    </a>
-                  ))}
-
-                  {/* Security */}
-                  {data.cicdTools.security.length > 0 && data.cicdTools.security.map((sec, idx) => (
-                    <a
-                      key={idx}
-                      href={sec.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '16px',
-                        background: darkMode ? '#1E3A4F' : '#E6F3FF',
-                        borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E5A7F' : '#0077B6'}`,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s, box-shadow 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '8px', color: colors.text, fontSize: '14px' }}>
-                        🔒 Security Scanning
-                      </div>
-                      <div style={{ fontSize: '13px', color: colors.text, opacity: 0.8 }}>
-                        {sec.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: colors.text, opacity: 0.6, marginTop: '4px' }}>
-                        📁 {sec.path}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-
-                {/* No tools detected message */}
-                {data.cicdTools.cicd.length === 0 && 
-                 data.cicdTools.containers.length === 0 && 
-                 data.cicdTools.testing.length === 0 && 
-                 data.cicdTools.coverage.length === 0 && 
-                 data.cicdTools.linting.length === 0 && 
-                 data.cicdTools.security.length === 0 && (
-                  <div style={{
-                    padding: '20px',
-                    textAlign: 'center',
-                    color: colors.text,
-                    opacity: 0.6,
-                    fontSize: '14px'
-                  }}>
-                    No CI/CD or automated tooling detected
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Branching Strategy Analysis */}
-            {data.branchingAnalysis && (
-              <div style={{ 
-                background: colors.cardBg, 
-                border: `2px solid ${colors.cardBorder}`, 
-                padding: '32px',
-                marginBottom: '40px',
-                borderRadius: '8px'
-              }}>
-                <h3 style={{ 
-                  margin: '0 0 24px', 
-                  fontSize: '20px', 
-                  fontWeight: '600',
-                  fontFamily: 'Literata, serif',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🔀</span>
-                  Branching Analysis
-                </h3>
-
-                {/* Detection Logic Explanation */}
-                <div style={{
-                  background: '#F0F8FF',
-                  border: '2px solid #0077B6',
-                  borderRadius: '8px',
-                  padding: '20px',
-                  marginBottom: '24px'
-                }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#0077B6' }}>
-                    🔍 How We Detect Branching Patterns
-                  </div>
-                  <div style={{ fontSize: '13px', lineHeight: '1.6', color: '#333' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Branch Name Matching:</strong> We analyze branch names for keywords:
-                    </div>
-                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                      <li><code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>feature</code> → Feature branches</li>
-                      <li><code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>fix</code>, <code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>bugfix</code> → Bugfix branches</li>
-                      <li><code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>hotfix</code> → Hotfix branches</li>
-                      <li><code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>develop</code>, <code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>dev</code> → Development branches</li>
-                      <li><code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>release</code> → Release branches</li>
-                    </ul>
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #0077B6' }}>
-                      <strong>Strategy Detection:</strong>
-                    </div>
-                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                      <li><strong>Git Flow:</strong> Has <code style={{ background: '#E8E8E8', padding: '2px 6px', borderRadius: '3px' }}>develop</code> branch + (feature or release branches)</li>
-                      <li><strong>GitHub Flow:</strong> Has 4+ feature branches, no develop branch</li>
-                      <li><strong>Trunk-Based:</strong> 3 or fewer total branches</li>
-                      <li><strong>Custom:</strong> Doesn't match standard patterns</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                  <div 
-                    onClick={() => setShowModal({ 
-                      type: 'info',
-                      title: data.branchingAnalysis.strategy,
-                      explanation: data.branchingAnalysis.strategyExplanation
-                    })}
-                    style={{ 
-                      background: '#F5F5F5', 
-                      padding: '20px', 
-                      borderRadius: '8px',
-                      borderLeft: '4px solid #1A1A1A',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#E8E8E8';
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#F5F5F5';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    <div style={{ fontSize: '12px', color: colors.text, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
-                      Strategy
-                    </div>
-                    <div style={{ fontSize: '22px', fontWeight: '700', color: colors.text }}>
-                      {data.branchingAnalysis.strategy}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                      Click for details
+                    <p className="commit-message">{commit.message}</p>
+                    <div className="commit-meta">
+                      <span>{commit.author}</span>
+                      <span>{new Date(commit.date).toLocaleDateString()}</span>
                     </div>
                   </div>
-
-                  <div 
-                    onClick={() => setShowModal({ 
-                      type: 'info',
-                      title: data.branchingAnalysis.workflow,
-                      explanation: data.branchingAnalysis.workflowExplanation,
-                      criteria: data.branchingAnalysis.detectionCriteria
-                    })}
-                    style={{ 
-                      background: '#F5F5F5', 
-                      padding: '20px', 
-                      borderRadius: '8px',
-                      borderLeft: '4px solid #7209B7',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#E8E8E8';
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#F5F5F5';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    <div style={{ fontSize: '12px', color: colors.text, marginBottom: '8px', textTransform: 'uppercase', fontWeight: '600' }}>
-                      Workflow
-                    </div>
-                    <div style={{ fontSize: '22px', fontWeight: '700', color: colors.text }}>
-                      {data.branchingAnalysis.workflow}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                      Click for details
-                    </div>
-                  </div>
-                </div>
-
-                {data.branchingAnalysis.patterns.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                    {data.branchingAnalysis.patterns.map((p, i) => (
-                      <div
-                        key={i}
-                        onClick={() => {
-                          // Filter branches by type
-                          const patternType = p.type.toLowerCase();
-                          let filteredBranches = [];
-                          
-                          if (patternType.includes('feature')) {
-                            filteredBranches = data.branches.filter(b => b.name.includes('feature'));
-                          } else if (patternType.includes('bugfix')) {
-                            filteredBranches = data.branches.filter(b => b.name.includes('bugfix') || b.name.includes('fix'));
-                          } else if (patternType.includes('hotfix')) {
-                            filteredBranches = data.branches.filter(b => b.name.includes('hotfix'));
-                          } else if (patternType.includes('development')) {
-                            filteredBranches = data.branches.filter(b => b.name.includes('develop') || b.name.includes('dev'));
-                          } else if (patternType.includes('release')) {
-                            filteredBranches = data.branches.filter(b => b.name.includes('release'));
-                          }
-                          
-                          if (filteredBranches.length > 0) {
-                            setShowModal({
-                              type: 'branches',
-                              data: filteredBranches,
-                              title: `${p.type} (${filteredBranches.length})`
-                            });
-                          }
-                        }}
-                        style={{ 
-                          background: '#FAFAFA', 
-                          border: '1px solid #E8E8E8',
-                          padding: '16px',
-                          borderRadius: '6px',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#E8E8E8';
-                          e.currentTarget.style.borderColor = '#1A1A1A';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#FAFAFA';
-                          e.currentTarget.style.borderColor = '#E8E8E8';
-                        }}
-                      >
-                        <span style={{ fontSize: '14px', color: '#333' }}>{p.type}</span>
-                        <span style={{ 
-                          background: colors.buttonBg, 
-                          color: '#fff',
-                          padding: '4px 12px',
-                          borderRadius: '12px',
-                          fontSize: '13px',
-                          fontWeight: '600'
-                        }}>
-                          {p.count}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Branch Diagram */}
-            {data.graph && data.graph.length > 0 && (
-              <div style={{ 
-                background: '#fff', 
-                border: `2px solid ${colors.cardBorder}`, 
-                padding: '32px',
-                marginBottom: '40px',
-                borderRadius: '8px'
-              }}>
-                <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ 
-                    margin: 0, 
-                    fontSize: '20px', 
-                    fontWeight: '600',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px'
-                  }}>
-                    🌳 Branch Diagram
-                    <span style={{ 
-                      fontSize: '13px', 
-                      background: '#F5F5F5',
-                      color: colors.text,
-                      padding: '4px 12px',
-                      borderRadius: '4px',
-                      fontWeight: '500'
-                    }}>
-                      {data.graph.length} commits
-                    </span>
-                  </h3>
-                </div>
-                
-                <div 
-                  onClick={() => setShowModal({
-                    type: 'diagram',
-                    title: 'Branch Diagram - Full View',
-                    data: data.graph,
-                    primaryBranch: data.primaryBranch
-                  })}
-                  style={{ 
-                    background: '#FAFAFA', 
-                    border: '1px solid #E8E8E8',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    height: '400px',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#1A1A1A';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#E8E8E8';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <BranchDiagram darkMode={darkMode} 
-                    commits={data.graph.slice(0, 50)} 
-                    primaryBranch={data.primaryBranch}
-                    compact={true}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '20px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    background: 'rgba(26, 26, 26, 0.9)',
-                    color: '#fff',
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: '600'
-                  }}>
-                    Click to expand and see all commits
-                  </div>
-                </div>
-                
-                <div style={{ 
-                  marginTop: '16px', 
-                  padding: '12px',
-                  background: '#F5F5F5',
-                  fontSize: '12px',
-                  color: colors.text,
-                  borderLeft: '3px solid #1A1A1A',
-                  borderRadius: '0 4px 4px 0'
-                }}>
-                  <strong>How to read:</strong> Each dot is a commit. Main branch runs through center. Lines show branch relationships. Click diagram to expand or click individual commits for details.
-                </div>
-              </div>
-            )}
-
-            {/* Summary Stats */}
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '16px'
-            }}>
-              <div 
-                onClick={() => setShowModal({ 
-                  type: 'contributors',
-                  data: data.contributors,
-                  title: `${data.contributors.length} Contributors`
-                })}
-                style={{ 
-                  background: colors.cardBg,
-                  border: `2px solid ${colors.cardBorder}`,
-                  padding: '24px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#1A1A1A';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#E8E8E8';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
-                  {data.contributors.length}
-                </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
-                  CONTRIBUTORS
-                </div>
-                <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                  Click to view all
-                </div>
-              </div>
-
-              <div 
-                onClick={() => {
-                  const branchesToShow = showStaleBranches && data.staleBranches 
-                    ? [...data.branches, ...data.staleBranches]
-                    : data.branches;
-                  setShowModal({ 
-                    type: 'branches',
-                    data: branchesToShow,
-                    title: `${branchesToShow.length} Branches`
-                  });
-                }}
-                style={{ 
-                  background: colors.cardBg,
-                  border: `2px solid ${colors.cardBorder}`,
-                  padding: '24px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#1A1A1A';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#E8E8E8';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
-                  {data.totalBranches || 0}
-                </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
-                  ACTIVE BRANCHES
-                </div>
-                
-                {/* Stale branches info */}
-                {data.staleBranchesCount > 0 && (
-                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #E8E8E8' }}>
-                    <div style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between',
-                      marginBottom: '8px'
-                    }}>
-                      <span style={{ fontSize: '11px', color: '#999' }}>
-                        {data.staleBranchesCount} stale (90+ days)
-                      </span>
-                      <label 
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '6px',
-                          cursor: 'pointer',
-                          fontSize: '11px',
-                          color: colors.text
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={showStaleBranches}
-                          onChange={(e) => setShowStaleBranches(e.target.checked)}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        Show
-                      </label>
-                    </div>
-                  </div>
-                )}
-                
-                {(!data.staleBranchesCount || data.staleBranchesCount === 0) && (
-                  <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                    No stale branches
-                  </div>
-                )}
-              </div>
-
-              <div 
-                onClick={() => setShowModal({ 
-                  type: 'commits',
-                  data: data.graph,
-                  title: `${data.totalCommits.toLocaleString()} Commits`
-                })}
-                style={{ 
-                  background: colors.cardBg,
-                  border: `2px solid ${colors.cardBorder}`,
-                  padding: '24px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#1A1A1A';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#E8E8E8';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <div style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
-                  {data.totalCommits.toLocaleString()}
-                </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
-                  TOTAL COMMITS
-                </div>
-                <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                  Click to view all
-                </div>
-              </div>
-
-              <div style={{ 
-                background: colors.cardBg,
-                border: `2px solid ${colors.cardBorder}`,
-                padding: '24px',
-                borderRadius: '8px'
-              }}>
-                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '8px', color: colors.text }}>
-                  {data.timeRange}
-                </div>
-                <div style={{ fontSize: '13px', letterSpacing: '1px', color: colors.text }}>
-                  TIME PERIOD
-                </div>
+                ))}
               </div>
             </div>
-          </>
-        )}
-      </div>
 
-      {/* Modals */}
-      {renderModal()}
+            {data.recentPRs && data.recentPRs.length > 0 && (
+              <div className="detail-card">
+                <h3>🔀 Recent Merged PRs</h3>
+                <div className="prs-list">
+                  {data.recentPRs.map((pr, index) => (
+                    <div key={index} className="pr-item">
+                      <a href={pr.url} target="_blank" rel="noopener noreferrer" className="pr-number">
+                        #{pr.number}
+                      </a>
+                      <p className="pr-title">{pr.title}</p>
+                      <div className="pr-meta">
+                        <span>{pr.author}</span>
+                        <span>{new Date(pr.mergedAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

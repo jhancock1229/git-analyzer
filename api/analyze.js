@@ -1,1193 +1,457 @@
-const GITHUB_API_BASE = 'https://api.github.com';
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+// Simple in-memory cache (will reset on serverless function cold starts)
+const cache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-async function githubRequest(url, params = {}) {
-  const headers = {
-    'Accept': 'application/vnd.github.v3+json',
-    'User-Agent': 'Git-Repo-Analyzer'
-  };
-  
-  if (GITHUB_TOKEN) {
-    headers['Authorization'] = `token ${GITHUB_TOKEN}`;
-  }
-  
-  const queryString = new URLSearchParams(params).toString();
-  const fullUrl = queryString ? `${url}?${queryString}` : url;
-  
-  const response = await fetch(fullUrl, { headers });
-  
-  if (!response.ok) {
-    let errorMessage = `GitHub API error: ${response.status}`;
+// Rate limiting state
+const rateLimitState = {
+  lastRequestTime: 0,
+  requestCount: 0,
+  resetTime: 0,
+  isThrottled: false
+};
+
+const MIN_REQUEST_INTERVAL = 1000; // Minimum 1 second between requests
+
+// Sleep utility for rate limiting
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Exponential backoff retry logic
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const error = await response.json();
-      errorMessage = error.message || errorMessage;
-    } catch (e) {
-      // If JSON parsing fails, use status text
-      errorMessage = response.statusText || errorMessage;
-    }
-    throw new Error(errorMessage);
-  }
-  
-  try {
-    return await response.json();
-  } catch (error) {
-    console.error(`[ERROR] Failed to parse JSON response from ${url}`);
-    console.error(`[ERROR] Parse error: ${error.message}`);
-    throw new Error(`Invalid JSON response from GitHub API: ${error.message}`);
-  }
-}
-
-function parseGitHubUrl(repoUrl) {
-  const match = repoUrl.match(/github\.com[\/:]([^\/]+)\/([^\/\.]+)/);
-  if (!match) {
-    throw new Error('Invalid GitHub URL');
-  }
-  return { owner: match[1], repo: match[2] };
-}
-
-function getTimeRangeDate(timeRange) {
-  const ranges = { day: 1, week: 7, month: 30, quarter: 90, '6months': 180, year: 365 };
-  if (timeRange === 'all') return null;
-  const days = ranges[timeRange] || 7;
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString();
-}
-
-function getTimeRangeLabel(timeRange) {
-  const labels = {
-    day: 'Last 24 Hours', week: 'Last Week', month: 'Last Month',
-    quarter: 'Last Quarter', '6months': 'Last 6 Months', year: 'Last Year', all: 'All Time'
-  };
-  return labels[timeRange] || 'Last Week';
-}
-
-function generateBranchActivityReport(activeBranches, branchCommitCounts, primaryBranch, timeRange) {
-  if (!activeBranches || activeBranches.length === 0) {
-    return null;
-  }
-  
-  const report = [];
-  
-  report.push('## 🌿 Active Branches');
-  report.push('');
-  
-  // Sort branches by commit count
-  const branchesWithActivity = activeBranches
-    .map(branch => ({
-      name: branch.name,
-      commitCount: branchCommitCounts.get(branch.name) || 0,
-      isPrimary: branch.name === primaryBranch
-    }))
-    .filter(b => b.commitCount > 0)
-    .sort((a, b) => b.commitCount - a.commitCount);
-  
-  if (branchesWithActivity.length === 0) {
-    return null;
-  }
-  
-  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
-  report.push(`**${branchesWithActivity.length} branch${branchesWithActivity.length !== 1 ? 'es' : ''} with activity this ${timeLabel}:**`);
-  report.push('');
-  
-  // Show top 10 most active branches
-  const topBranches = branchesWithActivity.slice(0, 10);
-  
-  topBranches.forEach((branch, idx) => {
-    const icon = branch.isPrimary ? '⭐' : '📍';
-    const label = branch.isPrimary ? ` (primary)` : '';
-    const barLength = Math.max(1, Math.floor((branch.commitCount / topBranches[0].commitCount) * 20));
-    const bar = '█'.repeat(barLength);
-    
-    report.push(`${idx + 1}. ${icon} **${branch.name}**${label}`);
-    report.push(`   ${bar} ${branch.commitCount} commit${branch.commitCount !== 1 ? 's' : ''}`);
-    report.push('');
-  });
-  
-  if (branchesWithActivity.length > 10) {
-    report.push(`*...and ${branchesWithActivity.length - 10} other active branch${branchesWithActivity.length - 10 !== 1 ? 'es' : ''}*`);
-    report.push('');
-  }
-  
-  return report.join('\n');
-}
-
-
-function analyzeBranchingPatterns(branches, graphNodes, mergedPRs, primaryBranch) {
-  const analysis = {
-    patterns: [],
-    strategy: 'Unknown',
-    strategyExplanation: '',
-    insights: [],
-    workflow: 'Unknown',
-    workflowExplanation: '',
-    detectionCriteria: [],
-    branchCounts: {}
-  };
-  
-  const featureBranches = branches.filter(b => b.name.includes('feature'));
-  const bugfixBranches = branches.filter(b => b.name.includes('fix'));
-  const developBranches = branches.filter(b => b.name.includes('develop') || b.name.includes('dev'));
-  const hotfixBranches = branches.filter(b => b.name.includes('hotfix'));
-  const releaseBranches = branches.filter(b => b.name.includes('release'));
-  
-  analysis.branchCounts = {
-    feature: featureBranches.length,
-    bugfix: bugfixBranches.length,
-    develop: developBranches.length,
-    hotfix: hotfixBranches.length,
-    release: releaseBranches.length,
-    total: branches.length
-  };
-  
-  const totalCommits = graphNodes.length;
-  const mergeCommits = graphNodes.filter(n => n.isMerge).length;
-  const mergeRatio = totalCommits > 0 ? (mergeCommits / totalCommits * 100).toFixed(1) : 0;
-  const prCount = mergedPRs.length;
-  const prRatio = totalCommits > 0 ? (prCount / totalCommits * 100).toFixed(1) : 0;
-  const { feature, bugfix, develop, hotfix, release, total } = analysis.branchCounts;
-  
-  if (prCount > 10 || prRatio > 10) {
-    analysis.workflow = 'Fork + Pull Request';
-    analysis.workflowExplanation = 'Contributors fork the repository and submit pull requests.';
-    analysis.detectionCriteria = [`${prCount} merged PRs`, `${prRatio}% PR merge ratio`];
-  } else if (total <= 3) {
-    analysis.workflow = 'Trunk-Based Development';
-    analysis.workflowExplanation = 'Few branches with most work on main.';
-    analysis.detectionCriteria = [`Only ${total} branches`];
-  } else {
-    analysis.workflow = 'Branch-based Development';
-    analysis.workflowExplanation = 'Multiple branches with feature workflow.';
-    analysis.detectionCriteria = [`${total} active branches`];
-  }
-  
-  if (develop > 0 && (feature > 0 || release > 0)) {
-    analysis.strategy = 'Git Flow';
-    analysis.strategyExplanation = 'Structured branching with main, develop, and feature/release branches.';
-  } else if (feature > 3) {
-    analysis.strategy = 'GitHub Flow';
-    analysis.strategyExplanation = 'Simple workflow with main as production-ready and feature branches.';
-  } else if (total <= 3) {
-    analysis.strategy = 'Trunk-Based Development';
-    analysis.strategyExplanation = 'Minimal branching with quick merges.';
-  } else {
-    analysis.strategy = 'Custom Strategy';
-    analysis.strategyExplanation = 'Unique branching pattern.';
-  }
-  
-  if (feature > 0) analysis.patterns.push({ type: 'Feature Branches', count: feature });
-  if (bugfix > 0) analysis.patterns.push({ type: 'Bugfix Branches', count: bugfix });
-  if (hotfix > 0) analysis.patterns.push({ type: 'Hotfix Branches', count: hotfix });
-  if (develop > 0) analysis.patterns.push({ type: 'Development Branches', count: develop });
-  if (release > 0) analysis.patterns.push({ type: 'Release Branches', count: release });
-  
-  return analysis;
-}
-
-function analyzePRActivity(mergedPRs) {
-  const prInsights = {
-    recentWork: [],
-    prTypes: { features: 0, bugfixes: 0, dependencies: 0 }
-  };
-  
-  if (mergedPRs.length === 0) return prInsights;
-  
-  const workAreaFrequency = new Map();
-  
-  mergedPRs.forEach(pr => {
-    const title = pr.title;
-    
-    if (/\b(feat|feature|add|new|implement)\b/i.test(title)) prInsights.prTypes.features++;
-    else if (/\b(fix|bug|issue|resolve|patch)\b/i.test(title)) prInsights.prTypes.bugfixes++;
-    else if (/\b(dep|dependency|bump|upgrade)\b/i.test(title)) prInsights.prTypes.dependencies++;
-    
-    let workArea = title
-      .replace(/^(feat|feature|fix|bug|refactor|docs?|chore|test|perf|ci)(\(.*?\))?:?\s*/i, '')
-      .replace(/\b(add|added|update|updated|fix|fixed|improve|improved)\b/gi, '')
-      .trim();
-    
-    const words = workArea.split(/\s+/).filter(w => w.length > 2);
-    if (words.length > 0) {
-      workArea = words.slice(0, 4).join(' ').toLowerCase();
-      if (workArea.length > 5 && workArea.length < 60) {
-        workAreaFrequency.set(workArea, (workAreaFrequency.get(workArea) || 0) + 1);
-      }
-    }
-  });
-  
-  prInsights.recentWork = Array.from(workAreaFrequency.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([area]) => area);
-  
-  return prInsights;
-}
-
-async function analyzeRecentCodeChanges(owner, repo, recentCommits, limit = 30) {
-  if (!recentCommits || recentCommits.length === 0) {
-    return { narrative: 'No commits found in the selected time period.' };
-  }
-  
-  console.log(`[NARRATIVE] Total commits available: ${recentCommits.length}`);
-  
-  try {
-    // Get commit messages and metadata for LLM analysis
-    const commitsForAnalysis = recentCommits.slice(0, Math.min(limit, recentCommits.length));
-    
-    // Format commits for LLM
-    const commitSummary = commitsForAnalysis.map((commit, idx) => {
-      const msg = commit.commit?.message || commit.message || '';
-      const author = commit.commit?.author?.name || commit.author?.name || 'Unknown';
-      const date = commit.commit?.author?.date || commit.author?.date || '';
-      return `${idx + 1}. ${msg.split('\n')[0]} (by ${author})`;
-    }).join('\n');
-    
-    // Call Claude API to generate summary
-    console.log(`[NARRATIVE] Calling Claude API to analyze ${commitsForAnalysis.length} commits...`);
-    
-    const narrative = await generateLLMSummary(owner, repo, commitSummary, recentCommits.length);
-    
-    return { narrative };
-    
-  } catch (error) {
-    console.error('[NARRATIVE] Error:', error);
-    // Fallback to basic narrative
-    return { narrative: generateBasicNarrative(recentCommits, owner, repo) };
-  }
-}
-
-async function generateLLMSummary(owner, repo, commitSummary, totalCommits) {
-  try {
-    // Check if API key is available
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.log('[NARRATIVE] ANTHROPIC_API_KEY not set, skipping LLM summary');
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-    
-    const prompt = `You are analyzing a GitHub repository: ${owner}/${repo}
-
-Here are the ${totalCommits} most recent commits:
-
-${commitSummary}
-
-Please write a clear, executive-friendly summary of what the development team has been working on. Focus on:
-1. Major themes and work areas (e.g., GPU support, performance optimization, bug fixes)
-2. Specific features or improvements being built
-3. The overall direction and focus of development
-
-Format your response in markdown with clear sections. Be specific and reference actual commit messages when relevant. Write in a professional but conversational tone. Keep it concise (300-500 words).`;
-
-    console.log('[NARRATIVE] Calling Anthropic API...');
-    
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[NARRATIVE] API error details:', JSON.stringify(errorData));
-      throw new Error(`Anthropic API error: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
-
-    const data = await response.json();
-    const summary = data.content[0].text;
-    
-    console.log('[NARRATIVE] LLM summary generated successfully');
-    
-    return summary;
-    
-  } catch (error) {
-    console.error('[NARRATIVE] LLM generation failed:', error);
-    console.error('[NARRATIVE] Error details:', error.message);
-    // Fallback to basic categorization
-    return `# Development Activity: ${owner}/${repo}\n\n**${totalCommits} commits** in this period\n\nUnable to generate detailed summary. Please try again.`;
-  }
-}
-
-function generateDetailedNarrative(detailedCommits, allCommits, owner, repo) {
-  const story = [];
-  
-  story.push(`# Development Activity: ${owner}/${repo}`);
-  story.push('');
-  story.push(`**${allCommits.length} commits** in this period`);
-  story.push('');
-  story.push('---');
-  story.push('');
-  
-  // Analyze work areas from file changes
-  const workAreas = analyzeWorkAreas(detailedCommits);
-  
-  story.push('## 🔥 Active Development Areas:');
-  story.push('');
-  
-  Object.entries(workAreas)
-    .filter(([_, data]) => data.count > 0)
-    .sort((a, b) => b[1].count - a[1].count)
-    .forEach(([area, data]) => {
-      story.push(`**${area}** (${data.count} commits)`);
-      story.push(data.description);
-      if (data.examples.length > 0) {
-        data.examples.slice(0, 2).forEach(ex => {
-          story.push(`- ${ex}`);
-        });
-      }
-      story.push('');
-    });
-  
-  // Recent commits
-  story.push('---');
-  story.push('');
-  story.push('## Recent Commits:');
-  story.push('');
-  
-  detailedCommits.slice(0, 8).forEach((commit, idx) => {
-    story.push(`${idx + 1}. **${commit.message}**`);
-    story.push(`   *${commit.author}*`);
-    if (commit.files && commit.files.length > 0) {
-      const fileTypes = {};
-      commit.files.forEach(f => {
-        const type = getFileType(f.filename);
-        fileTypes[type] = (fileTypes[type] || 0) + 1;
-      });
-      const parts = Object.entries(fileTypes).map(([t, c]) => `${c} ${t}`);
-      story.push(`   Changed: ${parts.join(', ')}`);
-    }
-    story.push('');
-  });
-  
-  return story.join('\n');
-}
-
-function generateBasicNarrative(commits, owner, repo) {
-  const story = [];
-  
-  story.push(`# Development Activity: ${owner}/${repo}`);
-  story.push('');
-  story.push(`**${commits.length} commits** in this period`);
-  story.push('');
-  story.push('---');
-  story.push('');
-  
-  // Categorize by commit messages
-  const categories = categorizeByMessage(commits.slice(0, 50));
-  
-  story.push('## Work Categories:');
-  story.push('');
-  
-  Object.entries(categories)
-    .filter(([_, items]) => items.length > 0)
-    .sort((a, b) => b[1].length - a[1].length)
-    .forEach(([category, items]) => {
-      story.push(`**${category}** (${items.length} commits)`);
-      items.slice(0, 3).forEach(msg => {
-        story.push(`- ${msg}`);
-      });
-      if (items.length > 3) {
-        story.push(`- ...and ${items.length - 3} more`);
-      }
-      story.push('');
-    });
-  
-  return story.join('\n');
-}
-
-function analyzeWorkAreas(commits) {
-  const areas = {
-    'GPU & Accelerator Support': { count: 0, description: 'CUDA, ROCm, Intel XPU, and other GPU backend improvements', examples: [] },
-    'Performance & Optimization': { count: 0, description: 'Compiler improvements, kernel optimizations, speed enhancements', examples: [] },
-    'Distributed Computing': { count: 0, description: 'Distributed tensors, parallelization, multi-device coordination', examples: [] },
-    'Core Framework': { count: 0, description: 'Core PyTorch APIs, operators, and framework functionality', examples: [] },
-    'Testing & CI/CD': { count: 0, description: 'Test coverage, continuous integration, build infrastructure', examples: [] },
-    'Bug Fixes & Stability': { count: 0, description: 'Issue resolution, crash fixes, stability improvements', examples: [] }
-  };
-  
-  commits.forEach(commit => {
-    const msg = commit.message.toLowerCase();
-    const files = commit.files.map(f => f.filename.toLowerCase()).join(' ');
-    
-    if (msg.match(/cuda|rocm|xpu|gpu|intel|amd|nvidia/) || files.match(/cuda|rocm|xpu/)) {
-      areas['GPU & Accelerator Support'].count++;
-      if (areas['GPU & Accelerator Support'].examples.length < 3) {
-        areas['GPU & Accelerator Support'].examples.push(commit.message);
-      }
-    } else if (msg.match(/perf|optim|speed|fast|inductor|compiler/)) {
-      areas['Performance & Optimization'].count++;
-      if (areas['Performance & Optimization'].examples.length < 3) {
-        areas['Performance & Optimization'].examples.push(commit.message);
-      }
-    } else if (msg.match(/distribut|dtensor|parallel|shard/) || files.match(/distributed|dtensor/)) {
-      areas['Distributed Computing'].count++;
-      if (areas['Distributed Computing'].examples.length < 3) {
-        areas['Distributed Computing'].examples.push(commit.message);
-      }
-    } else if (msg.match(/test|ci|build/) || files.match(/test|ci/)) {
-      areas['Testing & CI/CD'].count++;
-      if (areas['Testing & CI/CD'].examples.length < 3) {
-        areas['Testing & CI/CD'].examples.push(commit.message);
-      }
-    } else if (msg.match(/fix|bug|crash|error/)) {
-      areas['Bug Fixes & Stability'].count++;
-      if (areas['Bug Fixes & Stability'].examples.length < 3) {
-        areas['Bug Fixes & Stability'].examples.push(commit.message);
-      }
-    } else {
-      areas['Core Framework'].count++;
-      if (areas['Core Framework'].examples.length < 3) {
-        areas['Core Framework'].examples.push(commit.message);
-      }
-    }
-  });
-  
-  return areas;
-}
-
-function categorizeByMessage(commits) {
-  const categories = {
-    'Features & Enhancements': [],
-    'Bug Fixes': [],
-    'Performance': [],
-    'Testing': [],
-    'Documentation': [],
-    'Refactoring': []
-  };
-  
-  commits.forEach(commit => {
-    const msg = (commit.commit?.message || commit.message || '').split('\n')[0];
-    const lower = msg.toLowerCase();
-    
-    if (lower.match(/feat|add|implement|support|enable/)) {
-      categories['Features & Enhancements'].push(msg);
-    } else if (lower.match(/fix|bug|crash|error/)) {
-      categories['Bug Fixes'].push(msg);
-    } else if (lower.match(/perf|optim|speed|fast/)) {
-      categories['Performance'].push(msg);
-    } else if (lower.match(/test|ci/)) {
-      categories['Testing'].push(msg);
-    } else if (lower.match(/doc|readme/)) {
-      categories['Documentation'].push(msg);
-    } else if (lower.match(/refactor|clean|remove/)) {
-      categories['Refactoring'].push(msg);
-    }
-  });
-  
-  return categories;
-}
-
-function getFileType(filename) {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.py')) return 'Python';
-  if (lower.match(/\.cpp$|\.cu$|\.h$/)) return 'C++/CUDA';
-  if (lower.match(/\.js$|\.ts$/)) return 'JavaScript/TypeScript';
-  if (lower.match(/test/)) return 'tests';
-  if (lower.match(/\.yml$|\.yaml$/)) return 'config';
-  return 'other files';
-}
-function analyzeCommitMessages(commits, owner, repo) {
-  const insights = {
-    features: 0,
-    bugfixes: 0,
-    performance: 0,
-    security: 0,
-    tests: 0,
-    docs: 0,
-    refactors: 0,
-    breaking: 0,
-    breakingChanges: [], // Array of breaking change commits with URLs
-    topAreas: [],
-    technicalDetails: [],
-    specificChanges: [],
-    qualitySignals: {
-      hasTests: 0,
-      hasDocs: 0,
-      hasReviews: 0
-    }
-  };
-  
-  if (!commits || commits.length === 0) return insights;
-  
-  const areaFrequency = new Map();
-  const changeDescriptions = new Map();
-  
-  commits.forEach(commitObj => {
-    if (!commitObj || !commitObj.commit || !commitObj.commit.message) return;
-    
-    const message = commitObj.commit.message;
-    const firstLine = message.split('\n')[0];
-    const fullMessage = message.toLowerCase();
-    const lower = firstLine.toLowerCase();
-    
-    // Categorize types
-    if (/\b(feat|feature|add|new|implement|introduce|create)\b/i.test(firstLine)) insights.features++;
-    if (/\b(fix|bug|issue|resolve|patch|error|correct)\b/i.test(firstLine)) insights.bugfixes++;
-    if (/\b(perf|performance|optimize|speed|faster|slow|improve.*speed)\b/i.test(firstLine)) insights.performance++;
-    if (/\b(security|vulnerability|cve|auth|safe|xss|csrf)\b/i.test(firstLine)) insights.security++;
-    if (/\b(test|tests|testing|spec|jest|unit|coverage)\b/i.test(fullMessage)) insights.tests++;
-    if (/\b(doc|docs|documentation|readme|comment|guide)\b/i.test(fullMessage)) insights.docs++;
-    if (/\b(refactor|restructure|reorganize|cleanup|clean up)\b/i.test(firstLine)) insights.refactors++;
-    
-    // Track breaking changes with full details
-    if (/\b(breaking|break|deprecated|deprecate)\b/i.test(fullMessage)) {
-      insights.breaking++;
-      insights.breakingChanges.push({
-        hash: commitObj.hash,
-        fullHash: commitObj.fullHash,
-        subject: commitObj.subject,
-        author: commitObj.author,
-        url: `https://github.com/${owner}/${repo}/commit/${commitObj.fullHash}`
-      });
-    }
-    
-    // Quality signals
-    if (/\b(test|tests|testing|spec)\b/i.test(fullMessage)) insights.qualitySignals.hasTests++;
-    if (/\b(doc|docs|documentation)\b/i.test(fullMessage)) insights.qualitySignals.hasDocs++;
-    if (/\b(review|reviewed|approved|lgtm)\b/i.test(fullMessage)) insights.qualitySignals.hasReviews++;
-    
-    // Extract area/component being changed
-    let area = null;
-    
-    // Pattern 1: Conventional commits - "type(scope):"
-    const conventionalMatch = firstLine.match(/^[a-z]+\(([^)]+)\):/i);
-    if (conventionalMatch) {
-      area = conventionalMatch[1].toLowerCase().trim();
-    }
-    
-    // Pattern 2: "Fix X bug", "Update X", "Add X support"
-    if (!area) {
-      const patterns = [
-        /(?:fix|update|add|improve|remove|delete|create)\s+([a-z]{3,20}(?:\s+[a-z]{3,20})?)/i,
-        /\b(?:in|for|to|of)\s+([a-z]{3,20}(?:\s+[a-z]{3,20})?)/i
-      ];
+      // Implement rate limiting throttle
+      const now = Date.now();
+      const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
       
-      for (const pattern of patterns) {
-        const match = firstLine.match(pattern);
-        if (match && match[1]) {
-          const candidate = match[1].toLowerCase().trim();
-          if (!['the', 'a', 'an', 'this', 'that'].includes(candidate)) {
-            area = candidate;
-            break;
-          }
-        }
-      }
-    }
-    
-    if (area) {
-      area = area.replace(/[^a-z0-9\s]/g, ' ').trim();
-      if (area.length > 2 && area.length < 40) {
-        areaFrequency.set(area, (areaFrequency.get(area) || 0) + 1);
-      }
-    }
-    
-    // Extract specific changes - what was actually done
-    const cleanMessage = firstLine
-      .replace(/^(feat|feature|fix|bug|refactor|docs?|chore|test|style|perf|ci|build)(\([^)]+\))?:?\s*/i, '')
-      .trim();
-    
-    if (cleanMessage.length > 10 && cleanMessage.length < 100) {
-      changeDescriptions.set(cleanMessage, (changeDescriptions.get(cleanMessage) || 0) + 1);
-    }
-  });
-  
-  // Get top areas
-  insights.topAreas = Array.from(areaFrequency.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([area, count]) => ({ area, count }));
-  
-  // Get most common specific changes
-  insights.specificChanges = Array.from(changeDescriptions.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([change]) => change);
-  
-  return insights;
-}
-
-async function detectCICDTools(owner, repo) {
-  const tools = {
-    cicd: [],
-    containers: [],
-    testing: [],
-    coverage: [],
-    linting: [],
-    security: []
-  };
-  
-  try {
-    // Strategy: Check all files in PARALLEL using Promise.allSettled
-    // This makes 1 API call per file simultaneously instead of sequentially
-    // Much faster than waiting for each check one by one
-    
-    const checks = [
-      // CI/CD platforms
-      { path: '.github/workflows', type: 'cicd', name: 'GitHub Actions', urlType: 'tree' },
-      { path: '.gitlab-ci.yml', type: 'cicd', name: 'GitLab CI', urlType: 'blob' },
-      { path: '.travis.yml', type: 'cicd', name: 'Travis CI', urlType: 'blob' },
-      { path: '.circleci/config.yml', type: 'cicd', name: 'CircleCI', urlType: 'blob' },
-      { path: 'Jenkinsfile', type: 'cicd', name: 'Jenkins', urlType: 'blob' },
-      
-      // Containers
-      { path: 'Dockerfile', type: 'containers', name: 'Dockerfile', urlType: 'blob' },
-      { path: 'docker-compose.yml', type: 'containers', name: 'docker-compose.yml', urlType: 'blob' },
-      
-      // Coverage
-      { path: 'codecov.yml', type: 'coverage', name: 'Codecov', urlType: 'blob' },
-      { path: '.coveragerc', type: 'coverage', name: 'Coverage.py', urlType: 'blob' },
-      
-      // Linting
-      { path: '.eslintrc', type: 'linting', name: 'ESLint', urlType: 'blob' },
-      { path: '.eslintrc.js', type: 'linting', name: 'ESLint', urlType: 'blob' },
-      { path: '.pylintrc', type: 'linting', name: 'Pylint', urlType: 'blob' },
-      
-      // Security
-      { path: '.github/dependabot.yml', type: 'security', name: 'Dependabot', urlType: 'blob' },
-      { path: '.snyk', type: 'security', name: 'Snyk', urlType: 'blob' }
-    ];
-    
-    // Execute all checks in parallel (much faster!)
-    const results = await Promise.allSettled(
-      checks.map(check => 
-        githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${check.path}`)
-          .then(() => ({ ...check, exists: true }))
-          .catch(() => ({ ...check, exists: false }))
-      )
-    );
-    
-    // Process results
-    const seenTypes = new Set();
-    results.forEach(result => {
-      if (result.status === 'fulfilled' && result.value.exists) {
-        const item = result.value;
-        
-        // Only add first of each type for linting/coverage to avoid duplicates
-        if ((item.type === 'linting' || item.type === 'coverage') && seenTypes.has(item.type)) {
-          return;
-        }
-        
-        const url = `https://github.com/${owner}/${repo}/${item.urlType}/main/${item.path}`;
-        
-        if (item.type === 'testing') {
-          tools[item.type].push({ framework: item.name, file: item.path, url });
-        } else {
-          tools[item.type].push({ name: item.name, path: item.path, url });
-        }
-        
-        if (item.type === 'linting' || item.type === 'coverage') {
-          seenTypes.add(item.type);
-        }
-      }
-    });
-    
-    // Check testing frameworks by reading package.json/requirements.txt in parallel
-    const testFileChecks = [
-      { path: 'package.json', frameworks: ['jest', 'mocha', 'vitest', 'cypress'] },
-      { path: 'requirements.txt', frameworks: ['pytest', 'unittest'] },
-      { path: 'pom.xml', frameworks: ['junit'] },
-      { path: 'Gemfile', frameworks: ['rspec', 'minitest'] }
-    ];
-    
-    const testResults = await Promise.allSettled(
-      testFileChecks.map(async (fileCheck) => {
-        const content = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${fileCheck.path}`);
-        if (content.content) {
-          const decoded = atob(content.content);
-          const foundFrameworks = [];
-          for (const framework of fileCheck.frameworks) {
-            if (decoded.toLowerCase().includes(framework)) {
-              foundFrameworks.push({
-                framework,
-                file: fileCheck.path,
-                url: `https://github.com/${owner}/${repo}/blob/main/${fileCheck.path}`
-              });
-            }
-          }
-          return foundFrameworks;
-        }
-        return [];
-      })
-    );
-    
-    // Add found test frameworks
-    testResults.forEach(result => {
-      if (result.status === 'fulfilled' && result.value) {
-        result.value.forEach(test => {
-          if (!tools.testing.find(t => t.framework === test.framework)) {
-            tools.testing.push(test);
-          }
-        });
-      }
-    });
-    
-  } catch (error) {
-    // If detection fails entirely, return empty tools
-  }
-  
-  return tools;
-}
-
-async function analyzeGitHubRepo(owner, repo, timeRange) {
-  const sinceDate = getTimeRangeDate(timeRange);
-  const repoInfo = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
-  const primaryBranch = repoInfo.default_branch;
-  const branches = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/branches`, { per_page: 100 });
-  
-  console.log(`[DEBUG] Primary branch from repo info: "${primaryBranch}"`);
-  console.log(`[DEBUG] Fetched ${branches.length} branches`);
-  console.log(`[DEBUG] First 5 branch names:`, branches.slice(0, 5).map(b => `"${b.name}"`).join(', '));
-  
-  const activeBranches = [];
-  const staleBranches = [];
-  const branchCommitCounts = new Map();
-  const branchLastSeen = new Map();
-  let allCommits = [];
-  const commitMap = new Map();
-  
-  // SMART STRATEGY: 
-  // - Fetch primary branch with more data (important)
-  // - Fetch other branches in parallel where possible
-  // - Use time filter to reduce data volume
-  const maxOtherBranches = 10; // Increased from 5 since we're optimizing elsewhere
-  const maxPagesPerBranch = 2;
-  
-  // Fetch primary branch first (most important, gets more data)
-  const primaryBranchObj = branches.find(b => b.name === primaryBranch);
-  
-  if (!primaryBranchObj) {
-    console.log(`[DEBUG] WARNING: Could not find primary branch "${primaryBranch}" in branch list`);
-    console.log(`[DEBUG] All branch names:`, branches.map(b => b.name).join(', '));
-    // Try to fetch commits directly from the primary branch
-    console.log(`[DEBUG] Attempting direct commit fetch from ${primaryBranch}...`);
-  }
-  
-  if (primaryBranchObj) {
-    console.log(`[DEBUG] Fetching commits from primary branch: ${primaryBranch}`);
-    let branchPage = 1;
-    let attemptedWithSince = false;
-    let totalFetched = 0;
-    
-    while (branchPage <= 5) { // Primary gets 5 pages (500 commits max)
-      const params = { per_page: 100, page: branchPage, sha: primaryBranchObj.name };
-      
-      // Try with since filter first
-      if (sinceDate && !attemptedWithSince) {
-        params.since = sinceDate;
-        console.log(`[DEBUG] Using since filter: ${sinceDate}`);
+      if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+        const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+        console.log(`[THROTTLE] Waiting ${waitTime}ms before next request`);
+        await sleep(waitTime);
       }
       
-      try {
-        console.log(`[DEBUG] Fetching page ${branchPage} from ${primaryBranch}...`);
-        const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
-        console.log(`[DEBUG] Got ${commits.length} commits on page ${branchPage}`);
-        
-        // If first page with since returns 0, try without since filter
-        if (commits.length === 0 && branchPage === 1 && sinceDate && !attemptedWithSince) {
-          console.log(`[DEBUG] No commits with since filter, retrying without it...`);
-          attemptedWithSince = true;
-          delete params.since;
-          const retryCommits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
-          console.log(`[DEBUG] Retry without since got ${retryCommits.length} commits`);
-          
-          if (retryCommits.length > 0) {
-            // Filter client-side by date
-            for (const commit of retryCommits) {
-              const commitDate = new Date(commit.commit.author.date);
-              const isInRange = !sinceDate || commitDate >= new Date(sinceDate);
-              
-              if (isInRange && !commitMap.has(commit.sha)) {
-                commitMap.set(commit.sha, { commit, branches: [primaryBranchObj.name] });
-                branchCommitCounts.set(primaryBranchObj.name, (branchCommitCounts.get(primaryBranchObj.name) || 0) + 1);
-                if (!branchLastSeen.has(primaryBranchObj.name) || commitDate > branchLastSeen.get(primaryBranchObj.name)) {
-                  branchLastSeen.set(primaryBranchObj.name, commitDate);
-                }
-                totalFetched++;
-              } else if (!isInRange) {
-                commitMap.get(commit.sha)?.branches.push(primaryBranchObj.name);
-              }
-            }
-            branchPage++;
-            continue;
-          }
-        }
-        
-        if (commits.length === 0) break;
-        
-        totalFetched += commits.length;
-        
-        for (const commit of commits) {
-          const commitDate = new Date(commit.commit.author.date);
-          
-          if (!commitMap.has(commit.sha)) {
-            commitMap.set(commit.sha, { commit, branches: [primaryBranchObj.name] });
-            branchCommitCounts.set(primaryBranchObj.name, (branchCommitCounts.get(primaryBranchObj.name) || 0) + 1);
-            if (!branchLastSeen.has(primaryBranchObj.name) || commitDate > branchLastSeen.get(primaryBranchObj.name)) {
-              branchLastSeen.set(primaryBranchObj.name, commitDate);
-            }
-          } else {
-            commitMap.get(commit.sha).branches.push(primaryBranchObj.name);
-          }
-        }
-        
-        if (commits.length > 0 && !activeBranches.find(b => b.name === primaryBranchObj.name)) {
-          activeBranches.push(primaryBranchObj);
-        }
-        
-        if (commits.length < 100) break;
-        branchPage++;
-      } catch (error) {
-        console.log(`[DEBUG] Error fetching commits: ${error.message}`);
-        break;
+      rateLimitState.lastRequestTime = Date.now();
+      
+      const response = await fetch(url, options);
+      
+      // Check rate limit headers
+      const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '999');
+      const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0') * 1000;
+      
+      console.log(`[RATE LIMIT] Remaining: ${remaining}, Reset: ${new Date(resetTime).toISOString()}`);
+      
+      // If we're getting low on requests, throttle more aggressively
+      if (remaining < 10) {
+        rateLimitState.isThrottled = true;
+        rateLimitState.resetTime = resetTime;
+        console.log('[RATE LIMIT] Low on requests, entering throttled mode');
       }
-    }
-    console.log(`[DEBUG] Finished fetching primary branch. Total in map: ${commitMap.size}`);
-  } else {
-    // Fallback: fetch commits directly using branch name even without branch object
-    console.log(`[DEBUG] Fallback: Fetching commits directly from branch "${primaryBranch}"...`);
-    
-    try {
-      let branchPage = 1;
-      while (branchPage <= 5) {
-        const params = { per_page: 100, page: branchPage, sha: primaryBranch };
+      
+      if (response.status === 403 || response.status === 429) {
+        const retryAfter = response.headers.get('retry-after');
+        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
         
-        if (sinceDate) {
-          params.since = sinceDate;
-        }
+        console.log(`[RETRY] Rate limited, waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`);
         
-        console.log(`[DEBUG] Fallback fetch page ${branchPage}...`);
-        const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
-        console.log(`[DEBUG] Fallback got ${commits.length} commits`);
-        
-        if (commits.length === 0 && branchPage === 1 && sinceDate) {
-          // Try without since filter
-          console.log(`[DEBUG] Fallback retry without since filter...`);
-          delete params.since;
-          const retryCommits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
-          console.log(`[DEBUG] Fallback retry got ${retryCommits.length} commits`);
-          
-          for (const commit of retryCommits) {
-            const commitDate = new Date(commit.commit.author.date);
-            const isInRange = !sinceDate || commitDate >= new Date(sinceDate);
-            
-            if (isInRange && !commitMap.has(commit.sha)) {
-              commitMap.set(commit.sha, { commit, branches: [primaryBranch] });
-              branchCommitCounts.set(primaryBranch, (branchCommitCounts.get(primaryBranch) || 0) + 1);
-              if (!branchLastSeen.has(primaryBranch) || commitDate > branchLastSeen.get(primaryBranch)) {
-                branchLastSeen.set(primaryBranch, commitDate);
-              }
-            }
-          }
-          
-          if (retryCommits.length < 100) break;
-          branchPage++;
+        if (attempt < maxRetries - 1) {
+          await sleep(waitTime);
           continue;
+        } else {
+          throw new Error('Rate limit exceeded. Please wait a few minutes before trying again.');
         }
-        
-        if (commits.length === 0) break;
-        
-        for (const commit of commits) {
-          const commitDate = new Date(commit.commit.author.date);
-          
-          if (!commitMap.has(commit.sha)) {
-            commitMap.set(commit.sha, { commit, branches: [primaryBranch] });
-            branchCommitCounts.set(primaryBranch, (branchCommitCounts.get(primaryBranch) || 0) + 1);
-            if (!branchLastSeen.has(primaryBranch) || commitDate > branchLastSeen.get(primaryBranch)) {
-              branchLastSeen.set(primaryBranch, commitDate);
-            }
-          }
-        }
-        
-        if (commits.length < 100) break;
-        branchPage++;
       }
       
-      // Add primary branch to active branches
-      if (commitMap.size > 0) {
-        activeBranches.push({ name: primaryBranch, commit: { sha: 'HEAD' } });
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
       }
       
-      console.log(`[DEBUG] Fallback finished. Total in map: ${commitMap.size}`);
+      return response;
+      
     } catch (error) {
-      console.log(`[DEBUG] Fallback error: ${error.message}`);
-    }
-  }
-  
-  // Fetch other branches (with time filter for efficiency)
-  for (const branch of branches.slice(0, maxOtherBranches)) {
-    if (branch.name === primaryBranch) continue;
-    
-    let branchPage = 1;
-    while (branchPage <= maxPagesPerBranch) {
-      const params = { per_page: 100, page: branchPage, sha: branch.name };
-      if (sinceDate) params.since = sinceDate;
+      if (attempt === maxRetries - 1) {
+        throw error;
+      }
       
-      try {
-        const commits = await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/commits`, params);
-        if (commits.length === 0) break;
-        
-        for (const commit of commits) {
-          if (!commitMap.has(commit.sha)) {
-            commitMap.set(commit.sha, { commit, branches: [branch.name] });
-            branchCommitCounts.set(branch.name, (branchCommitCounts.get(branch.name) || 0) + 1);
-            const commitDate = new Date(commit.commit.author.date);
-            if (!branchLastSeen.has(branch.name) || commitDate > branchLastSeen.get(branch.name)) {
-              branchLastSeen.set(branch.name, commitDate);
-            }
-          } else {
-            commitMap.get(commit.sha).branches.push(branch.name);
-          }
-        }
-        
-        if (commits.length > 0 && !activeBranches.find(b => b.name === branch.name)) {
-          activeBranches.push(branch);
-        }
-        
-        if (commits.length < 100) break;
-        branchPage++;
-      } catch (error) {
-        break;
-      }
+      const waitTime = Math.pow(2, attempt) * 1000;
+      console.log(`[RETRY] Error on attempt ${attempt + 1}, waiting ${waitTime}ms`);
+      await sleep(waitTime);
     }
   }
+}
+
+// Cache helper functions
+function getCacheKey(owner, repo, timeRange) {
+  return `${owner}/${repo}/${timeRange}`;
+}
+
+function getFromCache(key) {
+  const cached = cache.get(key);
+  if (!cached) return null;
   
-  allCommits = Array.from(commitMap.values()).map(item => ({ ...item.commit, branches: item.branches }));
-  allCommits.sort((a, b) => new Date(b.commit.author.date) - new Date(a.commit.author.date));
-  
-  if (!activeBranches.find(b => b.name === primaryBranch)) {
-    const primaryBranchObj = branches.find(b => b.name === primaryBranch);
-    if (primaryBranchObj) activeBranches.push(primaryBranchObj);
+  const age = Date.now() - cached.timestamp;
+  if (age > CACHE_DURATION) {
+    cache.delete(key);
+    return null;
   }
   
-  const staleThreshold = new Date();
-  staleThreshold.setDate(staleThreshold.getDate() - 90);
-  
-  for (const branch of branches) {
-    const lastSeen = branchLastSeen.get(branch.name);
-    const isActive = activeBranches.find(b => b.name === branch.name);
-    if (!isActive || (lastSeen && lastSeen < staleThreshold)) {
-      const daysSince = lastSeen ? Math.floor((new Date() - lastSeen) / 86400000) : 999;
-      staleBranches.push({ ...branch, lastCommit: lastSeen ? lastSeen.toISOString() : 'Unknown', daysSinceLastCommit: daysSince });
-    }
-  }
-  
-  // Extract PRs from commit messages (more accurate for recent merges)
-  // Commit messages often contain "(#12345)" for PR numbers
-  let pullRequests = [];
-  const prNumbers = new Set();
-  
-  console.log('[DEBUG] Extracting PR numbers from commits...');
-  
-  // Extract PR numbers from commit messages
-  for (const commit of allCommits) {
-    const message = commit.commit?.message || '';
-    // Match patterns like (#12345) or #12345 or PR #12345
-    const matches = message.match(/#(\d{4,6})/g);
-    if (matches) {
-      matches.forEach(match => {
-        const prNum = parseInt(match.replace('#', ''));
-        if (prNum > 1000) { // Filter out small numbers that might not be PRs
-          prNumbers.add(prNum);
-        }
-      });
-    }
-  }
-  
-  console.log(`[DEBUG] Found ${prNumbers.size} unique PR numbers in commits`);
-  
-  // Fetch details for up to 50 PRs (to avoid rate limits)
-  const prNumbersArray = Array.from(prNumbers).slice(0, 50);
-  
-  try {
-    const prPromises = prNumbersArray.map(async (prNum) => {
-      try {
-        return await githubRequest(`${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNum}`);
-      } catch (error) {
-        console.log(`[DEBUG] Failed to fetch PR #${prNum}: ${error.message}`);
-        return null;
-      }
-    });
-    
-    const prResults = await Promise.all(prPromises);
-    pullRequests = prResults.filter(pr => pr !== null);
-    
-    console.log(`[DEBUG] Fetched ${pullRequests.length} PR details from commit messages`);
-  } catch (error) {
-    console.log(`[DEBUG] Error fetching PR details: ${error.message}`);
-    pullRequests = [];
-  }
-  
-  const mergedPRs = pullRequests.filter(pr => pr.merged_at);
-  console.log(`[DEBUG] Total closed PRs: ${pullRequests.length}, Merged PRs: ${mergedPRs.length}`);
-  
-  const mergedPRsInRange = mergedPRs.filter(pr => {
-    if (!sinceDate) return true;
-    const mergedDate = new Date(pr.merged_at);
-    const cutoffDate = new Date(sinceDate);
-    return mergedDate >= cutoffDate;
+  console.log(`[CACHE HIT] Returning cached data (age: ${Math.round(age / 1000)}s)`);
+  return cached.data;
+}
+
+function setCache(key, data) {
+  cache.set(key, {
+    data,
+    timestamp: Date.now()
   });
-  
-  console.log(`[DEBUG] Merged PRs in range: ${mergedPRsInRange.length}`);
-  
-  if (mergedPRs.length > 0 && mergedPRsInRange.length === 0) {
-    console.log(`[DEBUG] WARNING: ${mergedPRs.length} merged PRs found, but 0 in date range!`);
-    console.log(`[DEBUG] Cutoff date: ${sinceDate}`);
-    console.log(`[DEBUG] Sample PR merge dates:`, mergedPRs.slice(0, 5).map(pr => pr.merged_at));
-  }
-  
-  const contributors = new Map();
-  const graphNodes = [];
-  
-  for (const commit of allCommits) {
-    const author = commit.commit.author;
-    const email = author.email;
-    const name = author.name;
-    
-    if (!contributors.has(email)) {
-      contributors.set(email, { name, email, commits: 0, additions: 0, deletions: 0, branches: [{ name: primaryBranch, isPrimary: true }], merges: 0 });
-    }
-    contributors.get(email).commits++;
-    if (commit.parents && commit.parents.length > 1) contributors.get(email).merges++;
-    
-    graphNodes.push({
-      hash: commit.sha.substring(0, 7),
-      fullHash: commit.sha,
-      author: name,
-      email,
-      timestamp: Math.floor(new Date(author.date).getTime() / 1000),
-      subject: commit.commit.message.split('\n')[0].substring(0, 50),
-      parents: (commit.parents || []).map(p => p.sha.substring(0, 7)),
-      branches: commit.branches || [primaryBranch],
-      isMerge: commit.parents && commit.parents.length > 1,
-      commit: commit.commit // Add full commit object for analysis
-    });
-  }
-  
-  const merges = mergedPRsInRange.slice(0, 10).map(pr => ({
-    author: pr.user?.login || 'Unknown',
-    branchName: pr.head?.ref || 'unknown',
-    time: new Date(pr.merged_at).toLocaleString(),
-    title: pr.title || 'Merged PR',
-    number: pr.number,
-    url: pr.html_url
-  }));
-  
-  const branchingAnalysis = analyzeBranchingPatterns(activeBranches, graphNodes, mergedPRs, primaryBranch);
-  const cicdTools = await detectCICDTools(owner, repo);
-  
-  console.log(`[DEBUG] ==========================================`);
-  console.log(`[DEBUG] Repo: ${owner}/${repo}`);
-  console.log(`[DEBUG] Time range: ${timeRange}, sinceDate: ${sinceDate}`);
-  console.log(`[DEBUG] Total commits: ${allCommits.length}`);
-  console.log(`[DEBUG] Contributors: ${contributors.size}`);
-  console.log(`[DEBUG] Active branches: ${activeBranches.length}`);
-  if (allCommits.length > 0) {
-    console.log(`[DEBUG] First commit: ${allCommits[0].commit.message.split('\n')[0]}`);
-    console.log(`[DEBUG] First commit date: ${allCommits[0].commit.author.date}`);
-  } else {
-    console.log(`[DEBUG] NO COMMITS FOUND!`);
-    console.log(`[DEBUG] Branches available: ${branches.length}`);
-    console.log(`[DEBUG] Primary branch: ${primaryBranch}`);
-  }
-  console.log(`[DEBUG] ==========================================`);
-  
-  // Generate management narrative from code changes
-  const codeChanges = await analyzeRecentCodeChanges(owner, repo, allCommits, 30);
-  
-  // Generate branch activity report
-  const branchActivity = generateBranchActivityReport(activeBranches, branchCommitCounts, primaryBranch, timeRange);
-  
-  // Build summary
-  const timeLabel = getTimeRangeLabel(timeRange).toLowerCase();
-  const commitCount = allCommits.length;
-  const devCount = contributors.size;
-  
-  let summary = "";
-  
-  if (commitCount === 0) {
-    summary = `No commits found in this time period (${timeLabel}).\n\nThis repository may not have had any activity during this time range, or the selected branch may not have recent commits. Try selecting a different time range or check if there are commits on other branches.`;
-  } else {
-    summary = `${commitCount} commits from ${devCount} ${devCount === 1 ? "developer" : "developers"} this ${timeLabel}.`;
-    
-    if (mergedPRsInRange.length > 0) {
-      summary += ` ${mergedPRsInRange.length} PRs merged.`;
-    }
-    
-    // Add branch activity report
-    if (branchActivity) {
-      summary += '\n\n' + branchActivity;
-    }
-    
-    // Add narrative timeline
-    if (codeChanges.narrative) {
-      summary += '\n\n' + codeChanges.narrative;
-    }
-  }
-  
-  return {
-    contributors: Array.from(contributors.values()).sort((a, b) => b.commits - a.commits),
-    totalCommits: allCommits.length,
-    timeRange: getTimeRangeLabel(timeRange),
-    primaryBranch,
-    primaryBranchUrl: `https://github.com/${owner}/${repo}/tree/${primaryBranch}`,
-    totalBranches: activeBranches.length,
-    staleBranchesCount: staleBranches.length,
-    allBranchesCount: branches.length,
-    merges,
-    branches: activeBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, commitCount: branchCommitCounts.get(b.name) || 0, isStale: false })),
-    staleBranches: staleBranches.map(b => ({ name: b.name, isPrimary: b.name === primaryBranch, lastCommit: b.lastCommit, daysSinceLastCommit: b.daysSinceLastCommit, isStale: true })),
-    timeline: [],
-    graph: graphNodes,
-    branchingAnalysis,
-    activitySummary: summary,
-    cicdTools
-  };
+  console.log(`[CACHE] Stored data for key: ${key}`);
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
+
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
-  
+
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
+    return res.status(405).json({ error: 'Method not allowed' });
   }
-  
+
+  const { repoUrl, timeRange = 'week' } = req.body;
+
+  if (!repoUrl) {
+    return res.status(400).json({ error: 'Repository URL is required' });
+  }
+
   try {
-    console.log('[API] Starting analysis...');
-    const { repoUrl, timeRange } = req.body;
-    console.log(`[API] Repo: ${repoUrl}, Time: ${timeRange}`);
+    // Parse repository URL
+    const urlPattern = /github\.com\/([^\/]+)\/([^\/]+)/;
+    const match = repoUrl.match(urlPattern);
+
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid GitHub repository URL' });
+    }
+
+    const [, owner, repo] = match;
+    const cleanRepo = repo.replace(/\.git$/, '');
+
+    // Check cache first
+    const cacheKey = getCacheKey(owner, cleanRepo, timeRange);
+    const cachedData = getFromCache(cacheKey);
     
-    const { owner, repo } = parseGitHubUrl(repoUrl);
-    console.log(`[API] Parsed: ${owner}/${repo}`);
+    if (cachedData) {
+      return res.status(200).json({
+        ...cachedData,
+        fromCache: true,
+        message: 'Data served from cache (updated within last 5 minutes)'
+      });
+    }
+
+    // Check if we're in throttled mode
+    if (rateLimitState.isThrottled) {
+      const now = Date.now();
+      if (now < rateLimitState.resetTime) {
+        const waitSeconds = Math.ceil((rateLimitState.resetTime - now) / 1000);
+        return res.status(429).json({
+          error: `Rate limit protection active. Please wait ${waitSeconds} seconds before trying again.`,
+          retryAfter: waitSeconds
+        });
+      } else {
+        rateLimitState.isThrottled = false;
+      }
+    }
+
+    const token = process.env.GITHUB_TOKEN;
     
-    const data = await analyzeGitHubRepo(owner, repo, timeRange);
-    console.log(`[API] Analysis complete, sending response`);
+    if (!token) {
+      return res.status(500).json({ 
+        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.' 
+      });
+    }
+
+    const headers = {
+      'Authorization': `token ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'Git-Analyzer-App'
+    };
+
+    // Calculate date range
+    const now = new Date();
+    const timeRanges = {
+      'day': 1,
+      'week': 7,
+      'month': 30,
+      'quarter': 90,
+      '6months': 180,
+      'year': 365,
+      'all': 36500
+    };
+
+    const daysAgo = timeRanges[timeRange] || 7;
+    const since = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    const sinceISO = since.toISOString();
+
+    console.log(`[START] Analyzing ${owner}/${cleanRepo} for ${timeRange} (since ${sinceISO})`);
+
+    // Fetch repository info with retry
+    const repoResponse = await fetchWithRetry(
+      `https://api.github.com/repos/${owner}/${cleanRepo}`,
+      { headers }
+    );
+    const repoInfo = await repoResponse.json();
+
+    // Fetch commits with pagination (limited to 335 to avoid rate limits)
+    let allCommits = [];
+    let page = 1;
+    const maxCommits = 335;
+
+    while (allCommits.length < maxCommits) {
+      console.log(`[COMMITS] Fetching page ${page}...`);
+      
+      const commitsResponse = await fetchWithRetry(
+        `https://api.github.com/repos/${owner}/${cleanRepo}/commits?since=${sinceISO}&per_page=100&page=${page}`,
+        { headers }
+      );
+      
+      const commits = await commitsResponse.json();
+      
+      if (!commits || commits.length === 0) break;
+      
+      allCommits = allCommits.concat(commits);
+      
+      if (commits.length < 100) break;
+      if (allCommits.length >= maxCommits) {
+        allCommits = allCommits.slice(0, maxCommits);
+        break;
+      }
+      
+      page++;
+      
+      // Add small delay between pagination requests
+      await sleep(500);
+    }
+
+    console.log(`[COMMITS] Fetched ${allCommits.length} total commits`);
+
+    // Extract PR numbers from commits (efficient way to get merged PRs)
+    const prNumbers = new Set();
+    allCommits.forEach(commit => {
+      const message = commit.commit.message;
+      const prMatch = message.match(/\(#(\d+)\)/);
+      if (prMatch) {
+        prNumbers.add(parseInt(prMatch[1]));
+      }
+    });
+
+    console.log(`[PRs] Extracted ${prNumbers.size} PR numbers from commits`);
+
+    // Fetch PR details (limit to 50 to avoid rate limits)
+    let pullRequests = [];
+    const prNumbersArray = Array.from(prNumbers).slice(0, 50);
     
-    res.status(200).json({ success: true, data });
+    for (const prNumber of prNumbersArray) {
+      try {
+        const prResponse = await fetchWithRetry(
+          `https://api.github.com/repos/${owner}/${cleanRepo}/pulls/${prNumber}`,
+          { headers }
+        );
+        
+        const pr = await prResponse.json();
+        pullRequests.push(pr);
+        
+        // Small delay between PR requests
+        await sleep(300);
+        
+      } catch (error) {
+        console.log(`[PR] Failed to fetch PR #${prNumber}: ${error.message}`);
+      }
+    }
+
+    console.log(`[PRs] Fetched details for ${pullRequests.length} PRs`);
+
+    // Analyze commit messages
+    function analyzeCommitMessages(commits) {
+      const categories = {
+        features: 0,
+        bugFixes: 0,
+        performance: 0,
+        security: 0,
+        tests: 0,
+        docs: 0,
+        refactor: 0,
+        other: 0
+      };
+
+      const areas = {};
+      const keywords = {};
+
+      commits.forEach(commit => {
+        const msg = commit.commit.message.toLowerCase();
+
+        if (msg.includes('feat:') || msg.includes('add') || msg.includes('new') || msg.includes('implement')) {
+          categories.features++;
+        } else if (msg.includes('fix:') || msg.includes('bug') || msg.includes('issue') || msg.includes('resolve')) {
+          categories.bugFixes++;
+        } else if (msg.includes('perf:') || msg.includes('optimize') || msg.includes('speed')) {
+          categories.performance++;
+        } else if (msg.includes('security') || msg.includes('vulnerability') || msg.includes('auth')) {
+          categories.security++;
+        } else if (msg.includes('test:') || msg.includes('add tests') || msg.includes('unit test')) {
+          categories.tests++;
+        } else if (msg.includes('docs:') || msg.includes('documentation') || msg.includes('readme')) {
+          categories.docs++;
+        } else if (msg.includes('refactor:') || msg.includes('refactor') || msg.includes('cleanup')) {
+          categories.refactor++;
+        } else {
+          categories.other++;
+        }
+
+        const areaMatch = msg.match(/\(([^)]+)\):/);
+        if (areaMatch) {
+          const area = areaMatch[1];
+          areas[area] = (areas[area] || 0) + 1;
+        }
+
+        const words = msg.split(/\s+/).filter(w => w.length > 4);
+        words.forEach(word => {
+          keywords[word] = (keywords[word] || 0) + 1;
+        });
+      });
+
+      return { categories, areas, keywords };
+    }
+
+    const analysis = analyzeCommitMessages(allCommits);
+
+    // Process contributor data
+    const contributors = {};
+    allCommits.forEach(commit => {
+      const author = commit.commit.author.name || commit.commit.author.email;
+      if (!contributors[author]) {
+        contributors[author] = {
+          name: author,
+          commits: 0,
+          additions: 0,
+          deletions: 0
+        };
+      }
+      contributors[author].commits++;
+    });
+
+    const sortedContributors = Object.values(contributors)
+      .sort((a, b) => b.commits - a.commits);
+
+    // Generate conversational summary
+    const totalDevelopers = sortedContributors.length;
+    const totalCommits = allCommits.length;
+    const { features, bugFixes, tests } = analysis.categories;
+    
+    const topAreas = Object.entries(analysis.areas)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([area]) => area);
+
+    let summary = '';
+    
+    if (totalCommits > 100) {
+      summary += `Very active ${timeRange}: `;
+    } else if (totalCommits > 50) {
+      summary += `Busy ${timeRange}: `;
+    } else if (totalCommits > 20) {
+      summary += `Steady ${timeRange}: `;
+    } else {
+      summary += `Quiet ${timeRange}: `;
+    }
+
+    summary += `${totalDevelopers} developer${totalDevelopers !== 1 ? 's' : ''} ${totalCommits > 50 ? 'pushed' : 'made'} ${totalCommits} commit${totalCommits !== 1 ? 's' : ''}. `;
+
+    const workItems = [];
+    if (features > 0) workItems.push(`${features} feature${features !== 1 ? 's' : ''} added`);
+    if (bugFixes > 0) workItems.push(`${bugFixes} bug${bugFixes !== 1 ? 's' : ''} fixed`);
+    if (workItems.length > 0) {
+      summary += `Work included: ${workItems.join(', ')}`;
+      if (bugFixes > features && bugFixes > 5) {
+        summary += ' (stability focus)';
+      }
+    }
+
+    if (topAreas.length > 0) {
+      summary += `. ${topAreas.length > 1 ? 'Active in' : 'Focus'}: ${topAreas.join(', ')}`;
+    }
+
+    if (tests > totalCommits * 0.2) {
+      summary += '. Strong testing culture';
+    }
+
+    summary += '.';
+
+    // Filter merged PRs
+    const mergedPRs = pullRequests.filter(pr => 
+      pr.merged_at && 
+      new Date(pr.merged_at) >= since
+    );
+
+    // Prepare response data
+    const responseData = {
+      repository: {
+        name: repoInfo.full_name,
+        description: repoInfo.description,
+        stars: repoInfo.stargazers_count,
+        forks: repoInfo.forks_count,
+        openIssues: repoInfo.open_issues_count,
+        language: repoInfo.language,
+        url: repoInfo.html_url
+      },
+      timeRange: {
+        value: timeRange,
+        since: sinceISO,
+        daysAgo
+      },
+      summary,
+      stats: {
+        totalCommits: allCommits.length,
+        totalContributors: sortedContributors.length,
+        totalPRs: mergedPRs.length,
+        categories: analysis.categories,
+        topAreas: topAreas.slice(0, 5)
+      },
+      contributors: sortedContributors.slice(0, 10),
+      recentCommits: allCommits.slice(0, 20).map(commit => ({
+        message: commit.commit.message.split('\n')[0],
+        author: commit.commit.author.name,
+        date: commit.commit.author.date,
+        sha: commit.sha.substring(0, 7),
+        url: commit.html_url
+      })),
+      recentPRs: mergedPRs.slice(0, 10).map(pr => ({
+        number: pr.number,
+        title: pr.title,
+        author: pr.user.login,
+        mergedAt: pr.merged_at,
+        url: pr.html_url
+      }))
+    };
+
+    // Store in cache
+    setCache(cacheKey, responseData);
+
+    return res.status(200).json(responseData);
+
   } catch (error) {
-    console.error('[API] ERROR:', error);
-    console.error('[API] ERROR STACK:', error.stack);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'An error occurred during analysis',
-      error: error.toString()
+    console.error('Error analyzing repository:', error);
+    
+    if (error.message.includes('Rate limit')) {
+      return res.status(429).json({ 
+        error: error.message,
+        retryAfter: 300 // Suggest waiting 5 minutes
+      });
+    }
+    
+    return res.status(500).json({ 
+      error: error.message || 'Failed to analyze repository',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
-};
+}
