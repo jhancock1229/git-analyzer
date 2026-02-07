@@ -165,9 +165,19 @@ export default async function handler(req, res) {
 
     const token = process.env.GITHUB_TOKEN;
     
+    console.log('[DEBUG] Environment check:', {
+      hasToken: !!token,
+      tokenLength: token ? token.length : 0,
+      tokenPrefix: token ? token.substring(0, 4) : 'none',
+      allEnvKeys: Object.keys(process.env).filter(k => k.includes('GITHUB'))
+    });
+    
     if (!token) {
       return res.status(500).json({ 
-        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.' 
+        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.',
+        debug: {
+          availableEnvVars: Object.keys(process.env).filter(k => k.includes('GITHUB'))
+        }
       });
     }
 
