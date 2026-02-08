@@ -224,7 +224,8 @@
   width: 400px;
   height: 240px;
   margin: 0 auto 24px;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 }
 
 .git-branching-animation svg {

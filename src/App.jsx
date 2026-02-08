@@ -303,7 +303,12 @@ function App() {
       {loading && (
         <div className="loading">
           <div className="git-branching-animation">
-            <svg width="800" height="240" viewBox="0 0 800 240" style={{ transform: `translateX(${Math.max(0, 400 - commits.length * 40)}px)` }}>
+            <svg 
+              width="400" 
+              height="240" 
+              viewBox={`${Math.max(0, commits.length * 40 - 400)} 0 400 240`}
+              preserveAspectRatio="xMaxYMid meet"
+            >
               {/* Draw lines between connected commits */}
               {commits.map((commit, idx) => {
                 const prevCommit = commits[idx - 1];
@@ -325,10 +330,6 @@ function App() {
                       stroke={commit.color}
                       strokeWidth="3"
                       strokeLinecap="round"
-                      style={{ 
-                        animationDelay: '0s',
-                        animationDuration: '0.3s'
-                      }}
                     />
                   );
                 } else if (commit.branchFrom !== undefined) {
@@ -344,10 +345,6 @@ function App() {
                       stroke={commit.color}
                       strokeWidth="3"
                       strokeLinecap="round"
-                      style={{ 
-                        animationDelay: '0s',
-                        animationDuration: '0.3s'
-                      }}
                     />
                   );
                 } else if (commit.mergeFrom !== undefined) {
@@ -363,10 +360,6 @@ function App() {
                       stroke={commit.color}
                       strokeWidth="3"
                       strokeLinecap="round"
-                      style={{ 
-                        animationDelay: '0s',
-                        animationDuration: '0.3s'
-                      }}
                     />
                   );
                 }
@@ -385,10 +378,6 @@ function App() {
                   fill={commit.color}
                   stroke={commit.color}
                   strokeWidth="2"
-                  style={{ 
-                    animationDelay: '0s',
-                    animationDuration: '0.3s'
-                  }}
                 />
               ))}
             </svg>
