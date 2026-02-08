@@ -1,0 +1,5 @@
+Dockerfile
+docker-compose.yml
+k8s/
+K3S-DEPLOY.md
+deploy-k3s.sh

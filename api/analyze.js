@@ -87,7 +87,124 @@ function setCache(key, data) {
   });
 }
 
-module.exports = async function handler(req, res) {
+async function generateExecutiveSummary(commits, owner, repo, headers, timeRange) {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  
+  if (!groqApiKey) {
+    console.log('[LLM] No GROQ_API_KEY found, skipping executive summary');
+    return null;
+  }
+
+  try {
+    console.log('[LLM] Generating executive summary from code diffs...');
+    
+    // Get the 10 most recent commits for analysis
+    const commitsToAnalyze = commits.slice(0, 10);
+    
+    // Fetch actual code diffs
+    const diffs = [];
+    for (const commit of commitsToAnalyze) {
+      try {
+        const diffResponse = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`,
+          {
+            headers: {
+              ...headers,
+              'Accept': 'application/vnd.github.v3.diff'
+            }
+          }
+        );
+        
+        if (diffResponse.ok) {
+          const diffText = await diffResponse.text();
+          
+          // Limit diff size to avoid token limits (first 2000 chars per commit)
+          const truncatedDiff = diffText.substring(0, 2000);
+          
+          diffs.push({
+            sha: commit.sha.substring(0, 7),
+            author: commit.commit.author.name,
+            date: commit.commit.author.date,
+            diff: truncatedDiff
+          });
+        }
+        
+        await sleep(200); // Rate limiting
+      } catch (error) {
+        console.log(`[LLM] Failed to fetch diff for ${commit.sha}`);
+      }
+    }
+
+    if (diffs.length === 0) {
+      console.log('[LLM] No diffs fetched, skipping summary');
+      return null;
+    }
+
+    console.log(`[LLM] Analyzing ${diffs.length} commit diffs...`);
+
+    // Prepare context for LLM
+    const diffsText = diffs.map(d => 
+      `Commit ${d.sha} by ${d.author}:\n${d.diff}\n---`
+    ).join('\n\n');
+
+    const prompt = `You are analyzing code changes in a git repository. Based ONLY on the actual code diffs below, write a brief executive summary for non-technical stakeholders.
+
+Time period: ${timeRange}
+Number of commits analyzed: ${diffs.length}
+
+CODE DIFFS:
+${diffsText}
+
+Write a 2-3 paragraph executive summary that explains:
+1. What functionality was added or changed (be specific about features)
+2. What bugs or issues were fixed
+3. Any performance, security, or architectural improvements
+4. Overall development focus and patterns
+
+Do NOT mention commit messages. Focus ONLY on what the code changes actually do. Use business-friendly language.`;
+
+    // Call Groq API
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a technical analyst who explains code changes to business executives. Be specific and avoid jargon.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 600,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      console.log(`[LLM] Groq API error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const summary = data.choices[0].message.content;
+    
+    console.log('[LLM] Executive summary generated successfully');
+    return summary;
+
+  } catch (error) {
+    console.error('[LLM] Error generating executive summary:', error);
+    return null;
+  }
+}
+
+const handler = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -340,6 +457,15 @@ module.exports = async function handler(req, res) {
       new Date(pr.merged_at) >= since
     );
 
+    // Generate executive summary from code diffs
+    const executiveSummary = await generateExecutiveSummary(
+      allCommits,
+      owner,
+      cleanRepo,
+      headers,
+      timeRange
+    );
+
     const responseData = {
       repository: {
         name: repoInfo.full_name,
@@ -356,6 +482,7 @@ module.exports = async function handler(req, res) {
         daysAgo
       },
       summary,
+      executiveSummary,
       stats: {
         totalCommits: allCommits.length,
         totalContributors: sortedContributors.length,
@@ -399,3 +526,4 @@ module.exports = async function handler(req, res) {
     });
   }
 };
+module.exports = handler;

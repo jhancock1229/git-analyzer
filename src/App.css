@@ -1,5 +1,166 @@
 .app {
   animation: fadeIn 0.5s ease-in;
+  min-height: 100vh;
+  transition: background-color 0.3s ease;
+}
+
+.dark-mode-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #1A1A1A;
+  color: white;
+  border: 1px solid #E8E8E8;
+  padding: 10px 16px;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 18px;
+  z-index: 1000;
+  transition: all 0.2s;
+}
+
+.dark-mode-toggle:hover {
+  background: #000;
+  transform: scale(1.1);
+}
+
+.dark-mode .dark-mode-toggle {
+  background: #E8E8E8;
+  color: #1A1A1A;
+  border-color: #4A4A4A;
+}
+
+.dark-mode .dark-mode-toggle:hover {
+  background: #fff;
+}
+
+/* Dark mode color overrides */
+.dark-mode {
+  background: #0A0A0A;
+  color: #E8E8E8;
+}
+
+.dark-mode .header {
+  color: #E8E8E8;
+  border-bottom-color: #E8E8E8;
+}
+
+.dark-mode .header p {
+  color: #B8B8B8;
+}
+
+.dark-mode .search-form,
+.dark-mode .repo-header,
+.dark-mode .chart-card,
+.dark-mode .areas-card,
+.dark-mode .detail-card,
+.dark-mode .loading {
+  background: #1A1A1A;
+  border-color: #333;
+}
+
+.dark-mode .form-group label {
+  color: #E8E8E8;
+}
+
+.dark-mode .repo-input,
+.dark-mode .time-select {
+  background: #0A0A0A;
+  border-color: #333;
+  color: #E8E8E8;
+}
+
+.dark-mode .repo-input:focus,
+.dark-mode .time-select:focus {
+  border-color: #E8E8E8;
+}
+
+.dark-mode .analyze-btn {
+  background: #E8E8E8;
+  color: #1A1A1A;
+}
+
+.dark-mode .analyze-btn:hover:not(:disabled) {
+  background: #fff;
+}
+
+.dark-mode .summary-card {
+  background: #1A1A1A;
+  border-left-color: #E8E8E8;
+}
+
+.dark-mode .summary-card h3 {
+  color: #E8E8E8;
+}
+
+.dark-mode .summary-text {
+  color: #E8E8E8;
+}
+
+.dark-mode .stat {
+  background: #0A0A0A;
+  border-color: #333;
+}
+
+.dark-mode .stat-value {
+  color: #E8E8E8;
+}
+
+.dark-mode .stat-label {
+  color: #B8B8B8;
+}
+
+.dark-mode .chart-card h3,
+.dark-mode .areas-card h3,
+.dark-mode .detail-card h3 {
+  color: #E8E8E8;
+}
+
+.dark-mode .area-tag {
+  background: #E8E8E8;
+  color: #1A1A1A;
+}
+
+.dark-mode .commit-item,
+.dark-mode .pr-item {
+  background: #0A0A0A;
+  border-left-color: #E8E8E8;
+}
+
+.dark-mode .commit-item:hover,
+.dark-mode .pr-item:hover {
+  background: #1A1A1A;
+}
+
+.dark-mode .commit-message,
+.dark-mode .pr-title {
+  color: #E8E8E8;
+}
+
+.dark-mode .commit-meta,
+.dark-mode .pr-meta {
+  color: #B8B8B8;
+}
+
+.dark-mode .repo-description {
+  color: #B8B8B8;
+}
+
+.dark-mode .repo-stats span {
+  color: #B8B8B8;
+}
+
+.dark-mode .spinner {
+  border-color: #333;
+  border-top-color: #E8E8E8;
+}
+
+.dark-mode .loading p {
+  color: #E8E8E8;
+}
+
+.dark-mode .loading-subtext {
+  color: #B8B8B8;
 }
 
 .header {
@@ -308,6 +469,61 @@
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 20px;
   margin-top: 25px;
+}
+
+.executive-summary-card {
+  background: #F0F8FF;
+  padding: 30px;
+  border-radius: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 30px;
+  border-left: 3px solid #4CAF50;
+}
+
+.executive-summary-card h3 {
+  margin-bottom: 15px;
+  color: #4CAF50;
+  font-size: 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.executive-summary-text {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: #1A1A1A;
+  font-family: 'IBM Plex Mono', monospace;
+  white-space: pre-line;
+}
+
+.executive-summary-footer {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #D0E8FF;
+  font-size: 11px;
+  color: #666;
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.dark-mode .executive-summary-card {
+  background: #1A1A1A;
+  border-left-color: #4CAF50;
+}
+
+.dark-mode .executive-summary-card h3 {
+  color: #4CAF50;
+}
+
+.dark-mode .executive-summary-text {
+  color: #E8E8E8;
+}
+
+.dark-mode .executive-summary-footer {
+  border-top-color: #333;
+  color: #B8B8B8;
 }
 
 .stat {

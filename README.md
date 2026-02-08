@@ -13,7 +13,14 @@ Add your GitHub token to `.env`:
 GH_TOKEN=your_token_here
 ```
 
-Get a token at: https://github.com/settings/tokens (needs `public_repo` scope)
+**Optional:** Add Groq API key for AI-powered executive summaries:
+```
+GROQ_API_KEY=your_groq_key_here
+```
+
+Get tokens:
+- GitHub: https://github.com/settings/tokens (needs `public_repo` scope)
+- Groq (free): https://console.groq.com
 
 ## Development
 
@@ -25,9 +32,11 @@ npm run dev
 
 1. Push to GitHub
 2. Import to Vercel
-3. Add environment variable:
-   - Name: `GH_TOKEN` (note: use GH_TOKEN, not GITHUB_TOKEN)
-   - Value: your token
+3. Add environment variables:
+   - Name: `GH_TOKEN` (required)
+   - Value: your GitHub token
+   - Name: `GROQ_API_KEY` (optional, for AI summaries)
+   - Value: your Groq API key
    - **Important**: Select "Production" (or all environments)
 4. **Redeploy** after adding the token (go to Deployments → click ⋯ → Redeploy)
 
