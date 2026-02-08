@@ -98,8 +98,8 @@ async function generateExecutiveSummary(commits, owner, repo, headers, timeRange
   try {
     console.log('[LLM] Generating executive summary from code diffs...');
     
-    // Get the 10 most recent commits for analysis
-    const commitsToAnalyze = commits.slice(0, 10);
+    // Get the 5 most recent commits for analysis (reduced from 10)
+    const commitsToAnalyze = commits.slice(0, 5);
     
     // Fetch actual code diffs
     const diffs = [];
@@ -129,7 +129,7 @@ async function generateExecutiveSummary(commits, owner, repo, headers, timeRange
           });
         }
         
-        await sleep(200); // Rate limiting
+        await sleep(100); // Reduced from 200
       } catch (error) {
         console.log(`[LLM] Failed to fetch diff for ${commit.sha}`);
       }
@@ -299,7 +299,7 @@ const handler = async (req, res) => {
 
     let allCommits = [];
     let page = 1;
-    const maxCommits = 300; // 3 pages of 100 commits each
+    const maxCommits = 200; // 2 pages - balanced for speed
 
     while (allCommits.length < maxCommits) {
       const commitsResponse = await fetchWithRetry(
@@ -320,7 +320,7 @@ const handler = async (req, res) => {
       }
       
       page++;
-      await sleep(150); // Slightly faster between pages
+      await sleep(100); // Faster between pages
     }
 
     const prNumbers = new Set();
@@ -333,7 +333,7 @@ const handler = async (req, res) => {
     });
 
     let pullRequests = [];
-    const prNumbersArray = Array.from(prNumbers).slice(0, 30); // Increased from 20
+    const prNumbersArray = Array.from(prNumbers).slice(0, 15); // Reduced for speed
     
     for (const prNumber of prNumbersArray) {
       try {
@@ -345,7 +345,7 @@ const handler = async (req, res) => {
         const pr = await prResponse.json();
         pullRequests.push(pr);
         
-        await sleep(75); // Reduced from 100ms
+        await sleep(50); // Faster PR fetching
         
       } catch (error) {
         console.log(`Failed to fetch PR #${prNumber}`);
