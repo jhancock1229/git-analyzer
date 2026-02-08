@@ -219,7 +219,7 @@
   display: block;
 }
 
-/* Infinite scrolling git graph */
+/* Progressive build animation - elements appear one by one */
 .git-branching-animation {
   width: 400px;
   height: 240px;
@@ -231,17 +231,14 @@
   display: block;
 }
 
-/* Git graph scrolls infinitely from right to left */
-.branch-group,
-.main-node {
-  animation: scrollLeft 8s linear infinite;
-}
-
-/* Branches and nodes at different positions */
+/* Branches draw in progressively */
 .git-branch {
   stroke-width: 3;
   stroke-linecap: round;
   fill: none;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawBranch 0.8s ease-out forwards;
 }
 
 .main-branch {
@@ -252,8 +249,11 @@
   stroke-width: 3;
 }
 
+/* Nodes appear progressively */
 .git-node {
-  opacity: 1;
+  opacity: 0;
+  transform: scale(0);
+  animation: appearNode 0.4s ease-out forwards;
 }
 
 .main-node {
@@ -266,6 +266,11 @@
   stroke-width: 2;
 }
 
+/* Apply staggered delays via inline styles */
+.branch-group {
+  /* Delays applied inline per branch */
+}
+
 /* Dark mode */
 .dark-mode .main-branch,
 .dark-mode .main-node {
@@ -273,18 +278,25 @@
   fill: #60A5FA;
 }
 
-/* Infinite scroll animation */
-@keyframes scrollLeft {
-  0% {
-    transform: translateX(0);
-    opacity: 1;
+/* Draw branch animation */
+@keyframes drawBranch {
+  to {
+    stroke-dashoffset: 0;
   }
-  95% {
-    opacity: 1;
+}
+
+/* Node appear animation */
+@keyframes appearNode {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.15);
   }
   100% {
-    transform: translateX(-400px);
-    opacity: 0;
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
