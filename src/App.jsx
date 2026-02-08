@@ -15,6 +15,46 @@ function App() {
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
   const [gitNodeCount] = useState(() => Math.floor(Math.random() * 5) + 8); // 8-12 nodes
+  
+  // Generate random branch data for animation
+  const [branchData] = useState(() => {
+    const branches = [];
+    const numBranches = Math.floor(Math.random() * 3) + 3; // 3-5 branches
+    const mainCommits = gitNodeCount;
+    const spacing = 180 / (mainCommits - 1);
+    
+    for (let i = 0; i < numBranches; i++) {
+      const startCommit = Math.floor(Math.random() * (mainCommits - 3)) + 1;
+      const duration = Math.floor(Math.random() * 4) + 2; // 2-5 commits long
+      const endCommit = Math.min(startCommit + duration, mainCommits - 1);
+      const startX = 10 + (startCommit * spacing);
+      const endX = 10 + (endCommit * spacing);
+      const yOffset = (i % 2 === 0 ? -1 : 1) * (25 + (i * 10));
+      const branchY = 60 + yOffset;
+      const color = i === 0 ? '#10B981' : i === 1 ? '#F59E0B' : i === 2 ? '#8B5CF6' : i === 3 ? '#EC4899' : '#06B6D4';
+      const delay = startCommit * 0.15;
+      const commitCount = Math.floor(Math.random() * 3) + 2; // 2-4 commits per branch
+      
+      branches.push({
+        id: i,
+        startX,
+        endX,
+        startY: 60,
+        branchY,
+        color,
+        delay,
+        duration: (endCommit - startCommit) * 0.15,
+        commitCount,
+        commits: Array.from({ length: commitCount }, (_, idx) => ({
+          x: startX + ((endX - startX) / (commitCount + 1)) * (idx + 1),
+          y: branchY,
+          delay: delay + (idx * 0.1)
+        }))
+      });
+    }
+    
+    return branches;
+  });
 
   // Apply dark mode to body element
   useEffect(() => {
@@ -225,40 +265,87 @@ function App() {
         <div className="loading">
           <div className="git-branching-animation">
             <svg width="200" height="120" viewBox="0 0 200 120">
-              {/* Main branch (blue) - horizontal */}
-              <line className="git-branch main-branch" x1="10" y1="60" x2="190" y2="60" strokeLinecap="round" />
+              {/* Main branch (blue) - always horizontal */}
+              <line 
+                className="git-branch main-branch" 
+                x1="10" y1="60" x2="190" y2="60" 
+                strokeLinecap="round" 
+              />
               
-              {/* Feature branch (green) - branches up and merges back */}
-              <line className="git-branch feature-branch-out" x1="50" y1="60" x2="70" y2="35" strokeLinecap="round" />
-              <line className="git-branch feature-branch-line" x1="70" y1="35" x2="120" y2="35" strokeLinecap="round" />
-              <line className="git-branch feature-branch-in" x1="120" y1="35" x2="140" y2="60" strokeLinecap="round" />
+              {/* Dynamically generated branches */}
+              {branchData.map((branch) => (
+                <g key={branch.id}>
+                  {/* Branch out line */}
+                  <line 
+                    className={`git-branch dynamic-branch branch-${branch.id}`}
+                    x1={branch.startX} 
+                    y1={branch.startY} 
+                    x2={branch.startX + 20} 
+                    y2={branch.branchY}
+                    stroke={branch.color}
+                    strokeLinecap="round"
+                    style={{ animationDelay: `${branch.delay}s` }}
+                  />
+                  
+                  {/* Branch line */}
+                  <line 
+                    className={`git-branch dynamic-branch branch-${branch.id}`}
+                    x1={branch.startX + 20} 
+                    y1={branch.branchY} 
+                    x2={branch.endX - 20} 
+                    y2={branch.branchY}
+                    stroke={branch.color}
+                    strokeLinecap="round"
+                    style={{ animationDelay: `${branch.delay + 0.1}s` }}
+                  />
+                  
+                  {/* Merge back line */}
+                  <line 
+                    className={`git-branch dynamic-branch branch-${branch.id}`}
+                    x1={branch.endX - 20} 
+                    y1={branch.branchY} 
+                    x2={branch.endX} 
+                    y2={branch.startY}
+                    stroke={branch.color}
+                    strokeLinecap="round"
+                    style={{ animationDelay: `${branch.delay + branch.duration}s` }}
+                  />
+                  
+                  {/* Branch commits */}
+                  {branch.commits.map((commit, idx) => (
+                    <circle 
+                      key={`${branch.id}-${idx}`}
+                      className={`git-node dynamic-node`}
+                      cx={commit.x} 
+                      cy={commit.y} 
+                      r="5"
+                      fill={branch.color}
+                      stroke={branch.color}
+                      strokeWidth="1.5"
+                      style={{ 
+                        animationDelay: `${commit.delay}s`,
+                        filter: 'brightness(0.9)'
+                      }}
+                    />
+                  ))}
+                </g>
+              ))}
               
-              {/* Hotfix branch (orange) - quick branch down and merge */}
-              <line className="git-branch hotfix-branch-out" x1="90" y1="60" x2="100" y2="85" strokeLinecap="round" />
-              <line className="git-branch hotfix-branch-in" x1="100" y1="85" x2="110" y2="60" strokeLinecap="round" />
-              
-              {/* Main branch nodes - distributed horizontally */}
+              {/* Main branch commits */}
               {[...Array(gitNodeCount)].map((_, i) => {
                 const spacing = 180 / (gitNodeCount - 1);
                 const x = 10 + (i * spacing);
                 return (
                   <circle 
                     key={`main-${i}`}
-                    className={`git-node main-node node-${i}`}
+                    className={`git-node main-node`}
                     cx={x} 
                     cy="60" 
-                    r="5" 
+                    r="5"
+                    style={{ animationDelay: `${i * 0.15}s` }}
                   />
                 );
               })}
-              
-              {/* Feature branch nodes (green) */}
-              <circle className="git-node feature-node node-feature-1" cx="70" cy="35" r="5" />
-              <circle className="git-node feature-node node-feature-2" cx="95" cy="35" r="5" />
-              <circle className="git-node feature-node node-feature-3" cx="120" cy="35" r="5" />
-              
-              {/* Hotfix branch node (orange) */}
-              <circle className="git-node hotfix-node node-hotfix" cx="100" cy="85" r="5" />
             </svg>
           </div>
           <p>Fetching repository data...</p>

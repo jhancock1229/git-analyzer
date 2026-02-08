@@ -219,103 +219,46 @@
   display: block;
 }
 
-/* Sliding window animation - branches come and go */
+/* Git graph starts empty and builds progressively */
 .git-branch {
   stroke-width: 2.5;
   stroke-linecap: round;
   fill: none;
   opacity: 0;
+  stroke-dasharray: 50;
+  stroke-dashoffset: 50;
+  animation: branchDraw 0.4s ease-out forwards;
 }
 
-/* Main branch - always visible */
+/* Main branch */
 .main-branch {
   stroke: #3B82F6;
-  opacity: 1;
-}
-
-/* Feature branches - slide in and out */
-.feature-branch-out {
-  stroke: #10B981;
-  animation: branchSlideIn 2s ease-in-out infinite;
   animation-delay: 0s;
-  transform-origin: 50px 60px;
 }
 
-.feature-branch-line {
-  stroke: #10B981;
-  animation: branchFadeInOut 2s ease-in-out infinite;
-  animation-delay: 0.3s;
+/* Dynamic branches appear at random times */
+.dynamic-branch {
+  stroke-width: 2.5;
 }
 
-.feature-branch-in {
-  stroke: #10B981;
-  animation: branchSlideIn 2s ease-in-out infinite;
-  animation-delay: 0.8s;
-  transform-origin: 140px 60px;
-}
-
-/* Hotfix branch - quick appearance and merge */
-.hotfix-branch-out {
-  stroke: #F59E0B;
-  animation: branchSlideIn 2s ease-in-out infinite;
-  animation-delay: 1.2s;
-  transform-origin: 90px 60px;
-}
-
-.hotfix-branch-in {
-  stroke: #F59E0B;
-  animation: branchSlideIn 2s ease-in-out infinite;
-  animation-delay: 1.4s;
-  transform-origin: 110px 60px;
-}
-
-/* Commit nodes - slide through the window */
+/* Commit nodes appear progressively */
 .git-node {
-  animation: nodeSlide 3s linear infinite;
+  opacity: 0;
+  transform: scale(0);
+  animation: nodeAppear 0.3s ease-out forwards;
 }
 
-/* Main branch nodes - blue, continuous flow */
+/* Main branch nodes */
 .main-node {
   fill: #3B82F6;
   stroke: #2563EB;
   stroke-width: 1.5;
 }
 
-/* Feature branch nodes - green, appear with branch */
-.feature-node {
-  fill: #10B981;
-  stroke: #059669;
+/* Dynamic nodes get color from inline styles */
+.dynamic-node {
   stroke-width: 1.5;
-  animation: nodeFadeInOut 2s ease-in-out infinite;
 }
-
-/* Hotfix node - orange, quick flash */
-.hotfix-node {
-  fill: #F59E0B;
-  stroke: #D97706;
-  stroke-width: 1.5;
-  animation: nodeFadeInOut 2s ease-in-out infinite;
-}
-
-/* Staggered timing creates sliding window effect */
-.node-0 { animation-delay: 0s; }
-.node-1 { animation-delay: 0.25s; }
-.node-2 { animation-delay: 0.5s; }
-.node-3 { animation-delay: 0.75s; }
-.node-4 { animation-delay: 1s; }
-.node-5 { animation-delay: 1.25s; }
-.node-6 { animation-delay: 1.5s; }
-.node-7 { animation-delay: 1.75s; }
-.node-8 { animation-delay: 2s; }
-.node-9 { animation-delay: 2.25s; }
-.node-10 { animation-delay: 2.5s; }
-.node-11 { animation-delay: 2.75s; }
-
-.node-feature-1 { animation-delay: 0.3s; }
-.node-feature-2 { animation-delay: 0.6s; }
-.node-feature-3 { animation-delay: 0.9s; }
-
-.node-hotfix { animation-delay: 1.3s; }
 
 /* Dark mode adjustments */
 .dark-mode .main-branch,
@@ -327,80 +270,30 @@
   fill: #60A5FA;
 }
 
-.dark-mode .feature-branch-out,
-.dark-mode .feature-branch-line,
-.dark-mode .feature-branch-in,
-.dark-mode .feature-node {
-  stroke: #34D399;
-}
-
-.dark-mode .feature-node {
-  fill: #34D399;
-}
-
-.dark-mode .hotfix-branch-out,
-.dark-mode .hotfix-branch-in,
-.dark-mode .hotfix-node {
-  stroke: #FBBF24;
-}
-
-.dark-mode .hotfix-node {
-  fill: #FBBF24;
-}
-
-/* Sliding window animations */
-@keyframes nodeSlide {
+/* Branch drawing animation */
+@keyframes branchDraw {
   0% {
     opacity: 0;
-    transform: translateX(-10px);
-  }
-  10% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  90% {
-    opacity: 1;
-    transform: translateX(0);
+    stroke-dashoffset: 50;
   }
   100% {
-    opacity: 0;
-    transform: translateX(10px);
+    opacity: 1;
+    stroke-dashoffset: 0;
   }
 }
 
-@keyframes nodeFadeInOut {
-  0%, 100% {
+/* Node appearance animation */
+@keyframes nodeAppear {
+  0% {
     opacity: 0;
-    transform: scale(0.5);
+    transform: scale(0);
   }
-  20%, 80% {
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-@keyframes branchSlideIn {
-  0%, 100% {
-    opacity: 0;
-    stroke-dasharray: 40;
-    stroke-dashoffset: 40;
-  }
-  20% {
-    opacity: 1;
-    stroke-dashoffset: 0;
-  }
-  80% {
-    opacity: 1;
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes branchFadeInOut {
-  0%, 100% {
-    opacity: 0;
-  }
-  30%, 70% {
-    opacity: 1;
   }
 }
 
