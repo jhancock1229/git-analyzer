@@ -219,115 +219,48 @@
   display: block;
 }
 
-/* Progressive build animation - whimsical and playful */
-.git-branching-animation {
-  width: 400px;
-  height: 240px;
+/* Three-dot loading animation */
+.three-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
   margin: 0 auto 24px;
-  overflow: visible;
-  position: relative;
 }
 
-.git-branching-animation svg {
-  display: block;
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1C1917;
+  animation: dotPulse 1.4s ease-in-out infinite;
 }
 
-/* Branches draw in with a playful wiggle */
-.git-branch {
-  stroke-width: 3;
-  stroke-linecap: round;
-  fill: none;
+.dark-mode .dot {
+  background: #E7E5E4;
 }
 
-.animated-branch {
-  stroke-dasharray: 1000;
-  stroke-dashoffset: 1000;
-  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+.dot:nth-child(1) {
+  animation-delay: 0s;
 }
 
-.branch-split {
-  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards,
-             branchGlow 0.6s ease-out forwards;
+.dot:nth-child(2) {
+  animation-delay: 0.2s;
 }
 
-.branch-merge {
-  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards,
-             branchGlow 0.6s ease-out forwards;
+.dot:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
-/* Nodes appear with bounce and glow */
-.git-node {
-  transform-origin: center;
-}
-
-.animated-node {
-  animation: nodeBounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
-}
-
-.git-node-glow {
-  animation: nodeGlowPulse 0.8s ease-out forwards;
-}
-
-/* Dark mode */
-.dark-mode .main-branch,
-.dark-mode .main-node {
-  stroke: #60A5FA;
-  fill: #60A5FA;
-}
-
-/* Whimsical animations */
-@keyframes drawBranchWiggle {
-  0% {
-    stroke-dashoffset: 1000;
-    opacity: 0;
+@keyframes dotPulse {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
   }
-  50% {
+  40% {
     opacity: 1;
-  }
-  100% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-}
-
-@keyframes nodeBounceIn {
-  0% {
-    opacity: 0;
-    transform: scale(0) rotate(0deg);
-  }
-  50% {
-    transform: scale(1.3) rotate(180deg);
-  }
-  70% {
-    transform: scale(0.9) rotate(340deg);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(360deg);
-  }
-}
-
-@keyframes nodeGlowPulse {
-  0% {
-    opacity: 0;
-    transform: scale(0.5);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.5);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2);
-  }
-}
-
-@keyframes branchGlow {
-  0%, 100% {
-    filter: drop-shadow(0 0 0px currentColor);
-  }
-  50% {
-    filter: drop-shadow(0 0 8px currentColor);
+    transform: scale(1.2);
   }
 }
 
