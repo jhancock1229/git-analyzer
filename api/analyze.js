@@ -462,6 +462,35 @@ const handler = async (req, res) => {
       new Date(pr.merged_at) >= since
     );
 
+    // Calculate branch activity
+    const branchActivity = {};
+    allCommits.forEach(commit => {
+      // Extract branch info from commit (most commits reference a branch in their API data)
+      const branches = commit.commit.message.match(/\(#\d+\)/g); // PR references
+      
+      // Try to get branch from commit parents or use refs
+      let branchName = 'main';
+      
+      // Check commit message for branch indicators
+      if (commit.commit.message.includes('Merge pull request')) {
+        const match = commit.commit.message.match(/from [^\s]+\/([^\s]+)/);
+        if (match) branchName = match[1];
+      } else if (commit.commit.message.includes('Merge branch')) {
+        const match = commit.commit.message.match(/Merge branch '([^']+)'/);
+        if (match) branchName = match[1];
+      }
+      
+      if (!branchActivity[branchName]) {
+        branchActivity[branchName] = 0;
+      }
+      branchActivity[branchName]++;
+    });
+
+    // Convert to array and sort by commit count
+    const branchActivityArray = Object.entries(branchActivity)
+      .map(([name, commits]) => ({ name, commits }))
+      .sort((a, b) => b.commits - a.commits);
+
     // Generate executive summary from code diffs
     const executiveSummary = await generateExecutiveSummary(
       allCommits,
@@ -493,7 +522,8 @@ const handler = async (req, res) => {
         totalContributors: sortedContributors.length,
         totalPRs: mergedPRs.length,
         categories: analysis.categories,
-        topAreas: topAreas.slice(0, 5)
+        topAreas: topAreas.slice(0, 5),
+        branchActivity: branchActivityArray.slice(0, 5)
       },
       contributors: sortedContributors.slice(0, 10),
       recentCommits: allCommits.slice(0, 20).map(commit => ({

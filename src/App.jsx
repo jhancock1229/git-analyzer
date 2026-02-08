@@ -289,6 +289,31 @@ function App() {
             </div>
           </div>
 
+          {/* Branch Activity Chart */}
+          {data.stats.branchActivity && data.stats.branchActivity.length > 0 && (
+            <div className="branch-activity-card">
+              <h3>Branch Activity</h3>
+              <div className="branch-activity-list">
+                {data.stats.branchActivity.slice(0, 5).map((branch, index) => (
+                  <div key={index} className="branch-activity-item">
+                    <div className="branch-name">{branch.name}</div>
+                    <div className="branch-bar-container">
+                      <div 
+                        className="branch-bar" 
+                        style={{ 
+                          width: `${(branch.commits / data.stats.branchActivity[0].commits) * 100}%`,
+                          backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'][index % 5]
+                        }}
+                      >
+                        <span className="branch-count">{branch.commits}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="charts-grid">
             <div className="chart-card">
               <h3>📈 Work Categories</h3>
