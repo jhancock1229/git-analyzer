@@ -299,7 +299,7 @@ const handler = async (req, res) => {
 
     let allCommits = [];
     let page = 1;
-    const maxCommits = 100; // Reduced from 335
+    const maxCommits = 300; // 3 pages of 100 commits each
 
     while (allCommits.length < maxCommits) {
       const commitsResponse = await fetchWithRetry(
@@ -320,7 +320,7 @@ const handler = async (req, res) => {
       }
       
       page++;
-      await sleep(200); // Reduced from 500
+      await sleep(150); // Slightly faster between pages
     }
 
     const prNumbers = new Set();
@@ -333,7 +333,7 @@ const handler = async (req, res) => {
     });
 
     let pullRequests = [];
-    const prNumbersArray = Array.from(prNumbers).slice(0, 20); // Reduced from 50
+    const prNumbersArray = Array.from(prNumbers).slice(0, 30); // Increased from 20
     
     for (const prNumber of prNumbersArray) {
       try {
@@ -345,7 +345,7 @@ const handler = async (req, res) => {
         const pr = await prResponse.json();
         pullRequests.push(pr);
         
-        await sleep(100); // Reduced from 300
+        await sleep(75); // Reduced from 100ms
         
       } catch (error) {
         console.log(`Failed to fetch PR #${prNumber}`);
