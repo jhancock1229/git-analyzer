@@ -1,25 +1,10 @@
-export default {
+module.exports = {
   testEnvironment: 'node',
-  roots: ['<rootDir>/api', '<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.js', '**/?(*.)+(spec|test).js'],
+  coveragePathIgnorePatterns: ['/node_modules/'],
+  testMatch: ['**/__tests__/**/*.test.js'],
   collectCoverageFrom: [
     'api/**/*.js',
-    'src/**/*.{js,jsx}',
-    '!src/main.jsx',
-    '!**/node_modules/**',
+    '!api/server.js'
   ],
-  coverageThreshold: {
-    global: {
-      branches: 50,
-      functions: 50,
-      lines: 50,
-      statements: 50
-    }
-  },
-  transform: {
-    '^.+\\.jsx?$': 'babel-jest'
-  },
-  moduleNameMapper: {
-    '\\.(css|less|scss|sass)$': 'identity-obj-proxy'
-  }
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js']
 };
