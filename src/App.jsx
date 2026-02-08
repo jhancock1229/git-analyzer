@@ -334,7 +334,10 @@ function App() {
                   <button 
                     key={index} 
                     className="area-tag clickable-tag"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      alert(`Clicked: ${area}`);
                       console.log('Clicked area:', area);
                       console.log('Total commits:', data.recentCommits.length);
                       setCategoryModal({
