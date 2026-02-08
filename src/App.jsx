@@ -334,21 +334,14 @@ function App() {
                   <button 
                     key={index} 
                     className="area-tag clickable-tag"
-                    onClick={() => setCategoryModal({
-                      category: area,
-                      commits: data.recentCommits.filter(c => {
-                        const msg = c.message.toLowerCase();
-                        const areaLower = area.toLowerCase();
-                        return msg.includes(areaLower) || 
-                               (areaLower.includes('feature') && (msg.includes('feat') || msg.includes('add'))) ||
-                               (areaLower.includes('fix') && msg.includes('fix')) ||
-                               (areaLower.includes('docs') && msg.includes('doc')) ||
-                               (areaLower.includes('test') && msg.includes('test')) ||
-                               (areaLower.includes('refactor') && msg.includes('refactor')) ||
-                               (areaLower.includes('performance') && (msg.includes('perf') || msg.includes('optim'))) ||
-                               (areaLower.includes('security') && msg.includes('secur'));
-                      })
-                    })}
+                    onClick={() => {
+                      console.log('Clicked area:', area);
+                      console.log('Total commits:', data.recentCommits.length);
+                      setCategoryModal({
+                        category: area,
+                        commits: data.recentCommits
+                      });
+                    }}
                   >
                     {area}
                   </button>
