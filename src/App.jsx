@@ -338,9 +338,9 @@ function App() {
 
           <div className="details-grid">
             <div className="detail-card">
-              <h3>📝 Recent Commits</h3>
-              <div className="commits-list">
-                {data.recentCommits.map((commit, index) => (
+              <h3>Recent Commits</h3>
+              <div className="commits-list scrollable">
+                {data.recentCommits.slice(0, 5).map((commit, index) => (
                   <div key={index} className="commit-item">
                     <a href={commit.url} target="_blank" rel="noopener noreferrer" className="commit-sha">
                       {commit.sha}
@@ -357,9 +357,9 @@ function App() {
 
             {data.recentPRs && data.recentPRs.length > 0 && (
               <div className="detail-card">
-                <h3>🔀 Recent Merged PRs</h3>
-                <div className="prs-list">
-                  {data.recentPRs.map((pr, index) => (
+                <h3>Recent Merged PRs</h3>
+                <div className="prs-list scrollable">
+                  {data.recentPRs.slice(0, 5).map((pr, index) => (
                     <div key={index} className="pr-item">
                       <a href={pr.url} target="_blank" rel="noopener noreferrer" className="pr-number">
                         #{pr.number}

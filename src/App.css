@@ -519,6 +519,50 @@
   gap: 20px;
 }
 
+.commits-list.scrollable,
+.prs-list.scrollable {
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.commits-list.scrollable::-webkit-scrollbar,
+.prs-list.scrollable::-webkit-scrollbar {
+  width: 6px;
+}
+
+.commits-list.scrollable::-webkit-scrollbar-track,
+.prs-list.scrollable::-webkit-scrollbar-track {
+  background: #E7E5E4;
+  border-radius: 3px;
+}
+
+.dark-mode .commits-list.scrollable::-webkit-scrollbar-track,
+.dark-mode .prs-list.scrollable::-webkit-scrollbar-track {
+  background: #44403C;
+}
+
+.commits-list.scrollable::-webkit-scrollbar-thumb,
+.prs-list.scrollable::-webkit-scrollbar-thumb {
+  background: #A8A29E;
+  border-radius: 3px;
+}
+
+.dark-mode .commits-list.scrollable::-webkit-scrollbar-thumb,
+.dark-mode .prs-list.scrollable::-webkit-scrollbar-thumb {
+  background: #78716C;
+}
+
+.commits-list.scrollable::-webkit-scrollbar-thumb:hover,
+.prs-list.scrollable::-webkit-scrollbar-thumb:hover {
+  background: #78716C;
+}
+
+.dark-mode .commits-list.scrollable::-webkit-scrollbar-thumb:hover,
+.dark-mode .prs-list.scrollable::-webkit-scrollbar-thumb:hover {
+  background: #A8A29E;
+}
+
 .commit-item,
 .pr-item {
   padding: 20px;
