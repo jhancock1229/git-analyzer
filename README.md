@@ -10,7 +10,7 @@ npm install
 
 Add your GitHub token to `.env`:
 ```
-GITHUB_TOKEN=your_token_here
+GH_TOKEN=your_token_here
 ```
 
 Get a token at: https://github.com/settings/tokens (needs `public_repo` scope)
@@ -26,7 +26,7 @@ npm run dev
 1. Push to GitHub
 2. Import to Vercel
 3. Add environment variable:
-   - Name: `GITHUB_TOKEN`
+   - Name: `GH_TOKEN` (note: use GH_TOKEN, not GITHUB_TOKEN)
    - Value: your token
    - **Important**: Select "Production" (or all environments)
 4. **Redeploy** after adding the token (go to Deployments → click ⋯ → Redeploy)

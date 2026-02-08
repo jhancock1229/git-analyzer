@@ -140,11 +140,11 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const token = process.env.GITHUB_TOKEN;
+    const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
     
     if (!token) {
       return res.status(500).json({ 
-        error: 'GitHub token not configured. Please add GITHUB_TOKEN to environment variables.'
+        error: 'GitHub token not configured. Please add GH_TOKEN to environment variables.'
       });
     }
 
@@ -177,7 +177,7 @@ module.exports = async function handler(req, res) {
 
     let allCommits = [];
     let page = 1;
-    const maxCommits = 335;
+    const maxCommits = 100; // Reduced from 335
 
     while (allCommits.length < maxCommits) {
       const commitsResponse = await fetchWithRetry(
@@ -198,7 +198,7 @@ module.exports = async function handler(req, res) {
       }
       
       page++;
-      await sleep(500);
+      await sleep(200); // Reduced from 500
     }
 
     const prNumbers = new Set();
@@ -211,7 +211,7 @@ module.exports = async function handler(req, res) {
     });
 
     let pullRequests = [];
-    const prNumbersArray = Array.from(prNumbers).slice(0, 50);
+    const prNumbersArray = Array.from(prNumbers).slice(0, 20); // Reduced from 50
     
     for (const prNumber of prNumbersArray) {
       try {
@@ -223,7 +223,7 @@ module.exports = async function handler(req, res) {
         const pr = await prResponse.json();
         pullRequests.push(pr);
         
-        await sleep(300);
+        await sleep(100); // Reduced from 300
         
       } catch (error) {
         console.log(`Failed to fetch PR #${prNumber}`);
