@@ -147,21 +147,26 @@ async function generateExecutiveSummary(commits, owner, repo, headers, timeRange
       `Commit ${d.sha} by ${d.author}:\n${d.diff}\n---`
     ).join('\n\n');
 
-    const prompt = `You are analyzing code changes in a git repository. Based ONLY on the actual code diffs below, write a brief executive summary for non-technical stakeholders.
+    const prompt = `You are writing a status update for an engineering manager who needs to brief their director. Based on the code changes below, write a straightforward summary of what the team accomplished.
 
 Time period: ${timeRange}
-Number of commits analyzed: ${diffs.length}
+Commits analyzed: ${diffs.length}
 
-CODE DIFFS:
+CODE CHANGES:
 ${diffsText}
 
-Write a 2-3 paragraph executive summary that explains:
-1. What functionality was added or changed (be specific about features)
-2. What bugs or issues were fixed
-3. Any performance, security, or architectural improvements
-4. Overall development focus and patterns
+Write 2-3 SHORT paragraphs (3-4 sentences each) explaining:
+- What got built or fixed
+- Any notable technical improvements
+- What this means for the product
 
-Do NOT mention commit messages. Focus ONLY on what the code changes actually do. Use business-friendly language.`;
+Write like you're talking to another engineer, not a CEO. Be direct and specific. Avoid:
+- Marketing language ("significantly", "greatly improved")
+- Vague terms ("enhanced", "optimized") 
+- AI-speak ("streamlined", "robust", "leveraging")
+- Buzzwords
+
+Just tell them what happened in plain terms.`;
 
     // Call Groq API
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -175,15 +180,15 @@ Do NOT mention commit messages. Focus ONLY on what the code changes actually do.
         messages: [
           {
             role: 'system',
-            content: 'You are a technical analyst who explains code changes to business executives. Be specific and avoid jargon.'
+            content: 'You are an engineering manager writing a brief status update. Be direct and factual. No marketing language.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_tokens: 600,
-        temperature: 0.7
+        max_tokens: 400,
+        temperature: 0.5
       })
     });
 
