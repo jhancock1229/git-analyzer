@@ -264,88 +264,86 @@ function App() {
       {loading && (
         <div className="loading">
           <div className="git-branching-animation">
-            <svg width="200" height="120" viewBox="0 0 200 120">
-              {/* Main branch (blue) - always horizontal */}
-              <line 
-                className="git-branch main-branch" 
-                x1="10" y1="60" x2="190" y2="60" 
-                strokeLinecap="round" 
-              />
-              
-              {/* Dynamically generated branches */}
-              {branchData.map((branch) => (
-                <g key={branch.id}>
-                  {/* Branch out line */}
+            <svg width="800" height="240" viewBox="0 0 800 240">
+              {/* Create two copies of the graph for seamless looping */}
+              {[0, 1].map((copyIndex) => (
+                <g key={copyIndex} transform={`translate(${copyIndex * 400}, 0)`}>
+                  {/* Main branch */}
                   <line 
-                    className={`git-branch dynamic-branch branch-${branch.id}`}
-                    x1={branch.startX} 
-                    y1={branch.startY} 
-                    x2={branch.startX + 20} 
-                    y2={branch.branchY}
-                    stroke={branch.color}
-                    strokeLinecap="round"
-                    style={{ animationDelay: `${branch.delay}s` }}
+                    className="git-branch main-branch" 
+                    x1="20" y1="120" x2="380" y2="120" 
+                    strokeLinecap="round" 
                   />
                   
-                  {/* Branch line */}
-                  <line 
-                    className={`git-branch dynamic-branch branch-${branch.id}`}
-                    x1={branch.startX + 20} 
-                    y1={branch.branchY} 
-                    x2={branch.endX - 20} 
-                    y2={branch.branchY}
-                    stroke={branch.color}
-                    strokeLinecap="round"
-                    style={{ animationDelay: `${branch.delay + 0.1}s` }}
-                  />
-                  
-                  {/* Merge back line */}
-                  <line 
-                    className={`git-branch dynamic-branch branch-${branch.id}`}
-                    x1={branch.endX - 20} 
-                    y1={branch.branchY} 
-                    x2={branch.endX} 
-                    y2={branch.startY}
-                    stroke={branch.color}
-                    strokeLinecap="round"
-                    style={{ animationDelay: `${branch.delay + branch.duration}s` }}
-                  />
-                  
-                  {/* Branch commits */}
-                  {branch.commits.map((commit, idx) => (
-                    <circle 
-                      key={`${branch.id}-${idx}`}
-                      className={`git-node dynamic-node`}
-                      cx={commit.x} 
-                      cy={commit.y} 
-                      r="5"
-                      fill={branch.color}
-                      stroke={branch.color}
-                      strokeWidth="1.5"
-                      style={{ 
-                        animationDelay: `${commit.delay}s`,
-                        filter: 'brightness(0.9)'
-                      }}
-                    />
+                  {/* Dynamically generated branches */}
+                  {branchData.map((branch) => (
+                    <g key={`${copyIndex}-${branch.id}`} className="branch-group">
+                      {/* Branch out line */}
+                      <line 
+                        className={`git-branch dynamic-branch`}
+                        x1={branch.startX * 2} 
+                        y1={branch.startY * 2} 
+                        x2={(branch.startX + 20) * 2} 
+                        y2={branch.branchY * 2}
+                        stroke={branch.color}
+                        strokeLinecap="round"
+                      />
+                      
+                      {/* Branch line */}
+                      <line 
+                        className={`git-branch dynamic-branch`}
+                        x1={(branch.startX + 20) * 2} 
+                        y1={branch.branchY * 2} 
+                        x2={(branch.endX - 20) * 2} 
+                        y2={branch.branchY * 2}
+                        stroke={branch.color}
+                        strokeLinecap="round"
+                      />
+                      
+                      {/* Merge back line */}
+                      <line 
+                        className={`git-branch dynamic-branch`}
+                        x1={(branch.endX - 20) * 2} 
+                        y1={branch.branchY * 2} 
+                        x2={branch.endX * 2} 
+                        y2={branch.startY * 2}
+                        stroke={branch.color}
+                        strokeLinecap="round"
+                      />
+                      
+                      {/* Branch commits */}
+                      {branch.commits.map((commit, idx) => (
+                        <circle 
+                          key={`${copyIndex}-${branch.id}-${idx}`}
+                          className={`git-node dynamic-node`}
+                          cx={commit.x * 2} 
+                          cy={commit.y * 2} 
+                          r="7"
+                          fill={branch.color}
+                          stroke={branch.color}
+                          strokeWidth="2"
+                          style={{ filter: 'brightness(0.9)' }}
+                        />
+                      ))}
+                    </g>
                   ))}
+                  
+                  {/* Main branch commits */}
+                  {[...Array(gitNodeCount)].map((_, i) => {
+                    const spacing = 360 / (gitNodeCount - 1);
+                    const x = 20 + (i * spacing);
+                    return (
+                      <circle 
+                        key={`${copyIndex}-main-${i}`}
+                        className={`git-node main-node`}
+                        cx={x} 
+                        cy="120" 
+                        r="7"
+                      />
+                    );
+                  })}
                 </g>
               ))}
-              
-              {/* Main branch commits */}
-              {[...Array(gitNodeCount)].map((_, i) => {
-                const spacing = 180 / (gitNodeCount - 1);
-                const x = 10 + (i * spacing);
-                return (
-                  <circle 
-                    key={`main-${i}`}
-                    className={`git-node main-node`}
-                    cx={x} 
-                    cy="60" 
-                    r="5"
-                    style={{ animationDelay: `${i * 0.15}s` }}
-                  />
-                );
-              })}
             </svg>
           </div>
           <p>Fetching repository data...</p>

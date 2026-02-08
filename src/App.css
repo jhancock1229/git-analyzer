@@ -210,8 +210,8 @@
 }
 
 .git-branching-animation {
-  width: 200px;
-  height: 120px;
+  width: 400px;
+  height: 240px;
   margin: 0 auto 24px;
 }
 
@@ -219,81 +219,72 @@
   display: block;
 }
 
-/* Git graph starts empty and builds progressively */
+/* Infinite scrolling git graph */
+.git-branching-animation {
+  width: 400px;
+  height: 240px;
+  margin: 0 auto 24px;
+  overflow: hidden;
+}
+
+.git-branching-animation svg {
+  display: block;
+}
+
+/* Git graph scrolls infinitely from right to left */
+.branch-group,
+.main-node {
+  animation: scrollLeft 8s linear infinite;
+}
+
+/* Branches and nodes at different positions */
 .git-branch {
-  stroke-width: 2.5;
+  stroke-width: 3;
   stroke-linecap: round;
   fill: none;
-  opacity: 0;
-  stroke-dasharray: 50;
-  stroke-dashoffset: 50;
-  animation: branchDraw 0.4s ease-out forwards;
 }
 
-/* Main branch */
 .main-branch {
   stroke: #3B82F6;
-  animation-delay: 0s;
 }
 
-/* Dynamic branches appear at random times */
 .dynamic-branch {
-  stroke-width: 2.5;
+  stroke-width: 3;
 }
 
-/* Commit nodes appear progressively */
 .git-node {
-  opacity: 0;
-  transform: scale(0);
-  animation: nodeAppear 0.3s ease-out forwards;
+  opacity: 1;
 }
 
-/* Main branch nodes */
 .main-node {
   fill: #3B82F6;
   stroke: #2563EB;
-  stroke-width: 1.5;
+  stroke-width: 2;
 }
 
-/* Dynamic nodes get color from inline styles */
 .dynamic-node {
-  stroke-width: 1.5;
+  stroke-width: 2;
 }
 
-/* Dark mode adjustments */
+/* Dark mode */
 .dark-mode .main-branch,
 .dark-mode .main-node {
   stroke: #60A5FA;
-}
-
-.dark-mode .main-node {
   fill: #60A5FA;
 }
 
-/* Branch drawing animation */
-@keyframes branchDraw {
+/* Infinite scroll animation */
+@keyframes scrollLeft {
   0% {
-    opacity: 0;
-    stroke-dashoffset: 50;
+    transform: translateX(0);
+    opacity: 1;
+  }
+  95% {
+    opacity: 1;
   }
   100% {
-    opacity: 1;
-    stroke-dashoffset: 0;
-  }
-}
-
-/* Node appearance animation */
-@keyframes nodeAppear {
-  0% {
+    transform: translateX(-400px);
     opacity: 0;
-    transform: scale(0);
-  }
-  50% {
-    transform: scale(1.2);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
