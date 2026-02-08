@@ -219,98 +219,105 @@
   display: block;
 }
 
-/* Branch lines with colors - continuous heartbeat pulse */
+/* Sliding window animation - branches come and go */
 .git-branch {
   stroke-width: 2.5;
   stroke-linecap: round;
   fill: none;
-  stroke-dasharray: 60;
-  stroke-dashoffset: 0;
-  opacity: 0.3;
-  animation: branchPulse 1.5s ease-in-out infinite;
+  opacity: 0;
 }
 
-/* Main branch - blue */
+/* Main branch - always visible */
 .main-branch {
   stroke: #3B82F6;
-  animation-delay: 0s;
+  opacity: 1;
 }
 
-/* Feature branches - green */
+/* Feature branches - slide in and out */
 .feature-branch-out {
   stroke: #10B981;
-  animation-delay: 0.2s;
+  animation: branchSlideIn 2s ease-in-out infinite;
+  animation-delay: 0s;
+  transform-origin: 50px 60px;
 }
 
 .feature-branch-line {
   stroke: #10B981;
-  animation-delay: 0.25s;
+  animation: branchFadeInOut 2s ease-in-out infinite;
+  animation-delay: 0.3s;
 }
 
 .feature-branch-in {
   stroke: #10B981;
-  animation-delay: 0.4s;
+  animation: branchSlideIn 2s ease-in-out infinite;
+  animation-delay: 0.8s;
+  transform-origin: 140px 60px;
 }
 
-/* Hotfix branch - red/orange */
+/* Hotfix branch - quick appearance and merge */
 .hotfix-branch-out {
   stroke: #F59E0B;
-  animation-delay: 0.3s;
+  animation: branchSlideIn 2s ease-in-out infinite;
+  animation-delay: 1.2s;
+  transform-origin: 90px 60px;
 }
 
 .hotfix-branch-in {
   stroke: #F59E0B;
-  animation-delay: 0.35s;
+  animation: branchSlideIn 2s ease-in-out infinite;
+  animation-delay: 1.4s;
+  transform-origin: 110px 60px;
 }
 
-/* Commit nodes - heartbeat pulse */
+/* Commit nodes - slide through the window */
 .git-node {
-  opacity: 0.3;
-  animation: nodePulse 1.5s ease-in-out infinite;
+  animation: nodeSlide 3s linear infinite;
 }
 
-/* Main branch nodes - blue */
+/* Main branch nodes - blue, continuous flow */
 .main-node {
   fill: #3B82F6;
   stroke: #2563EB;
   stroke-width: 1.5;
 }
 
-/* Feature branch nodes - green */
+/* Feature branch nodes - green, appear with branch */
 .feature-node {
   fill: #10B981;
   stroke: #059669;
   stroke-width: 1.5;
+  animation: nodeFadeInOut 2s ease-in-out infinite;
 }
 
-/* Hotfix node - orange */
+/* Hotfix node - orange, quick flash */
 .hotfix-node {
   fill: #F59E0B;
   stroke: #D97706;
   stroke-width: 1.5;
+  animation: nodeFadeInOut 2s ease-in-out infinite;
 }
 
-/* Staggered node animations - cascading heartbeat across commits */
+/* Staggered timing creates sliding window effect */
 .node-0 { animation-delay: 0s; }
-.node-1 { animation-delay: 0.1s; }
-.node-2 { animation-delay: 0.2s; }
-.node-3 { animation-delay: 0.3s; }
-.node-4 { animation-delay: 0.4s; }
-.node-5 { animation-delay: 0.5s; }
-.node-6 { animation-delay: 0.6s; }
-.node-7 { animation-delay: 0.7s; }
-.node-8 { animation-delay: 0.8s; }
-.node-9 { animation-delay: 0.9s; }
-.node-10 { animation-delay: 1.0s; }
-.node-11 { animation-delay: 1.1s; }
+.node-1 { animation-delay: 0.25s; }
+.node-2 { animation-delay: 0.5s; }
+.node-3 { animation-delay: 0.75s; }
+.node-4 { animation-delay: 1s; }
+.node-5 { animation-delay: 1.25s; }
+.node-6 { animation-delay: 1.5s; }
+.node-7 { animation-delay: 1.75s; }
+.node-8 { animation-delay: 2s; }
+.node-9 { animation-delay: 2.25s; }
+.node-10 { animation-delay: 2.5s; }
+.node-11 { animation-delay: 2.75s; }
 
-.node-feature-1 { animation-delay: 0.25s; }
-.node-feature-2 { animation-delay: 0.4s; }
-.node-feature-3 { animation-delay: 0.55s; }
+.node-feature-1 { animation-delay: 0.3s; }
+.node-feature-2 { animation-delay: 0.6s; }
+.node-feature-3 { animation-delay: 0.9s; }
 
-.node-hotfix { animation-delay: 0.35s; }
+.node-hotfix { animation-delay: 1.3s; }
 
-/* Dark mode adjustments - slightly desaturated colors */
+/* Dark mode adjustments */
 .dark-mode .main-branch,
 .dark-mode .main-node {
   stroke: #60A5FA;
@@ -341,26 +348,59 @@
   fill: #FBBF24;
 }
 
-/* Heartbeat pulse animations - continuous wave effect */
-@keyframes nodePulse {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(1);
+/* Sliding window animations */
+@keyframes nodeSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
   }
-  50% {
+  10% {
     opacity: 1;
-    transform: scale(1.3);
+    transform: translateX(0);
+  }
+  90% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(10px);
   }
 }
 
-@keyframes branchPulse {
+@keyframes nodeFadeInOut {
   0%, 100% {
-    opacity: 0.3;
-    stroke-width: 2.5;
+    opacity: 0;
+    transform: scale(0.5);
   }
-  50% {
+  20%, 80% {
     opacity: 1;
-    stroke-width: 3;
+    transform: scale(1);
+  }
+}
+
+@keyframes branchSlideIn {
+  0%, 100% {
+    opacity: 0;
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+  }
+  20% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  80% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes branchFadeInOut {
+  0%, 100% {
+    opacity: 0;
+  }
+  30%, 70% {
+    opacity: 1;
   }
 }
 
