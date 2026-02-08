@@ -15,74 +15,85 @@ function App() {
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
   
-  // State for infinite building animation
-  const [graphSections, setGraphSections] = useState([]);
-  const [sectionCounter, setSectionCounter] = useState(0);
+  // Organic git graph that builds step by step
+  const [commits, setCommits] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [activeBranches, setActiveBranches] = useState([]);
+  const [nextCommitId, setNextCommitId] = useState(0);
 
-  // Generate a new section of git graph
-  const generateGraphSection = (startX, sectionId) => {
-    const numBranches = Math.floor(Math.random() * 3) + 2; // 2-4 branches
-    const sectionWidth = 150;
-    const branches = [];
-    
-    for (let i = 0; i < numBranches; i++) {
-      const branchStart = startX + Math.random() * 50;
-      const branchLength = 40 + Math.random() * 80;
-      const yOffset = (Math.random() > 0.5 ? -1 : 1) * (30 + Math.random() * 40);
-      const branchY = 120 + yOffset;
-      const colors = ['#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4'];
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      const commitCount = Math.floor(Math.random() * 3) + 2;
-      
-      branches.push({
-        id: `${sectionId}-${i}`,
-        startX: branchStart,
-        endX: branchStart + branchLength,
-        branchY,
-        color,
-        commits: Array.from({ length: commitCount }, (_, idx) => ({
-          x: branchStart + (branchLength / (commitCount + 1)) * (idx + 1),
-          y: branchY
-        }))
-      });
-    }
-    
-    // Main branch commits for this section
-    const mainCommits = Array.from({ length: 5 }, (_, i) => ({
-      x: startX + (i * 30),
-      y: 120,
-      id: `${sectionId}-main-${i}`
-    }));
-    
-    return { id: sectionId, startX, branches, mainCommits };
-  };
-
-  // Continuously add new sections
+  // Generate next organic commit
   useEffect(() => {
     if (!loading) return;
-    
-    // Initialize with first section
-    if (graphSections.length === 0) {
-      setGraphSections([generateGraphSection(20, 0)]);
-      setSectionCounter(1);
-    }
-    
-    // Add new section every 2 seconds
+
     const interval = setInterval(() => {
-      setGraphSections(prev => {
-        const lastSection = prev[prev.length - 1];
-        const newStartX = lastSection ? lastSection.startX + 150 : 20;
-        const newSection = generateGraphSection(newStartX, sectionCounter);
+      setCommits(prev => {
+        // Keep only recent commits to prevent memory issues
+        const recentCommits = prev.slice(-50);
         
-        // Keep only last 4 sections to prevent infinite DOM growth
-        const updated = [...prev, newSection].slice(-4);
-        return updated;
+        const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4'];
+        const currentX = recentCommits.length > 0 
+          ? recentCommits[recentCommits.length - 1].x + 40 
+          : 40;
+        
+        // Decide action: continue main, start branch, or merge branch
+        const rand = Math.random();
+        let newCommit;
+        
+        if (activeBranches.length > 0 && rand > 0.7) {
+          // Merge a branch back to main
+          const branch = activeBranches[0];
+          newCommit = {
+            id: nextCommitId,
+            x: currentX,
+            y: 120,
+            color: '#3B82F6',
+            branch: 'main',
+            mergeFrom: branch.y
+          };
+          setActiveBranches(ab => ab.slice(1));
+        } else if (rand > 0.5 && activeBranches.length < 3) {
+          // Start a new branch
+          const branchY = 120 + (Math.random() > 0.5 ? -1 : 1) * (50 + Math.random() * 50);
+          const branchColor = colors[Math.floor(Math.random() * (colors.length - 1)) + 1];
+          
+          newCommit = {
+            id: nextCommitId,
+            x: currentX,
+            y: branchY,
+            color: branchColor,
+            branch: `branch-${nextCommitId}`,
+            branchFrom: 120
+          };
+          
+          setActiveBranches(ab => [...ab, { y: branchY, color: branchColor, name: `branch-${nextCommitId}` }]);
+        } else if (activeBranches.length > 0 && rand > 0.3) {
+          // Continue on an active branch
+          const branch = activeBranches[Math.floor(Math.random() * activeBranches.length)];
+          newCommit = {
+            id: nextCommitId,
+            x: currentX,
+            y: branch.y,
+            color: branch.color,
+            branch: branch.name
+          };
+        } else {
+          // Continue on main branch
+          newCommit = {
+            id: nextCommitId,
+            x: currentX,
+            y: 120,
+            color: '#3B82F6',
+            branch: 'main'
+          };
+        }
+        
+        setNextCommitId(id => id + 1);
+        return [...recentCommits, newCommit];
       });
-      setSectionCounter(prev => prev + 1);
-    }, 2000);
-    
+    }, 600); // New commit every 600ms
+
     return () => clearInterval(interval);
-  }, [loading, sectionCounter, graphSections.length]);
+  }, [loading, nextCommitId, activeBranches]);
 
   // Apply dark mode to body element
   useEffect(() => {
@@ -292,95 +303,93 @@ function App() {
       {loading && (
         <div className="loading">
           <div className="git-branching-animation">
-            <svg width="800" height="240" viewBox="0 0 800 240">
-              {/* Main branch baseline */}
-              <line 
-                className="git-branch main-branch" 
-                x1="0" y1="120" x2="800" y2="120" 
-                strokeLinecap="round"
-                style={{ animationDelay: '0s' }}
-              />
-              
-              {/* Render each section with staggered timing */}
-              {graphSections.map((section, sectionIdx) => (
-                <g key={section.id}>
-                  {/* Main branch commits */}
-                  {section.mainCommits.map((commit, idx) => (
-                    <circle 
-                      key={commit.id}
-                      className="git-node main-node"
-                      cx={commit.x} 
-                      cy={commit.y} 
-                      r="7"
+            <svg width="800" height="240" viewBox="0 0 800 240" style={{ transform: `translateX(${Math.max(0, 400 - commits.length * 40)}px)` }}>
+              {/* Draw lines between connected commits */}
+              {commits.map((commit, idx) => {
+                const prevCommit = commits[idx - 1];
+                if (!prevCommit) return null;
+                
+                const lines = [];
+                
+                // Line from previous commit to this one
+                if (commit.branch === prevCommit.branch) {
+                  // Same branch - straight line
+                  lines.push(
+                    <line
+                      key={`line-${commit.id}`}
+                      className="git-branch"
+                      x1={prevCommit.x}
+                      y1={prevCommit.y}
+                      x2={commit.x}
+                      y2={commit.y}
+                      stroke={commit.color}
+                      strokeWidth="3"
+                      strokeLinecap="round"
                       style={{ 
-                        animationDelay: `${(sectionIdx * 2) + (idx * 0.3)}s`,
-                        animationDuration: '0.4s'
+                        animationDelay: '0s',
+                        animationDuration: '0.3s'
                       }}
                     />
-                  ))}
-                  
-                  {/* Branches */}
-                  {section.branches.map((branch, branchIdx) => {
-                    const baseDelay = (sectionIdx * 2) + (branchIdx * 0.8);
-                    return (
-                      <g key={branch.id} className="branch-group">
-                        {/* Branch out */}
-                        <line 
-                          className="git-branch dynamic-branch"
-                          x1={branch.startX} 
-                          y1="120" 
-                          x2={branch.startX + 25} 
-                          y2={branch.branchY}
-                          stroke={branch.color}
-                          strokeLinecap="round"
-                          style={{ animationDelay: `${baseDelay}s` }}
-                        />
-                        
-                        {/* Branch line */}
-                        <line 
-                          className="git-branch dynamic-branch"
-                          x1={branch.startX + 25} 
-                          y1={branch.branchY} 
-                          x2={branch.endX - 25} 
-                          y2={branch.branchY}
-                          stroke={branch.color}
-                          strokeLinecap="round"
-                          style={{ animationDelay: `${baseDelay + 0.2}s` }}
-                        />
-                        
-                        {/* Merge back */}
-                        <line 
-                          className="git-branch dynamic-branch"
-                          x1={branch.endX - 25} 
-                          y1={branch.branchY} 
-                          x2={branch.endX} 
-                          y2="120"
-                          stroke={branch.color}
-                          strokeLinecap="round"
-                          style={{ animationDelay: `${baseDelay + 0.6}s` }}
-                        />
-                        
-                        {/* Branch commits */}
-                        {branch.commits.map((commit, commitIdx) => (
-                          <circle 
-                            key={`${branch.id}-commit-${commitIdx}`}
-                            className="git-node dynamic-node"
-                            cx={commit.x} 
-                            cy={commit.y} 
-                            r="7"
-                            fill={branch.color}
-                            stroke={branch.color}
-                            strokeWidth="2"
-                            style={{ 
-                              animationDelay: `${baseDelay + 0.3 + (commitIdx * 0.15)}s`,
-                              filter: 'brightness(0.9)'
-                            }}
-                          />
-                        ))}
-                      </g>
-                    );
-                  })}
-                </g>
+                  );
+                } else if (commit.branchFrom !== undefined) {
+                  // Branching off - line from main to branch
+                  lines.push(
+                    <line
+                      key={`branch-${commit.id}`}
+                      className="git-branch"
+                      x1={prevCommit.x}
+                      y1={commit.branchFrom}
+                      x2={commit.x}
+                      y2={commit.y}
+                      stroke={commit.color}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      style={{ 
+                        animationDelay: '0s',
+                        animationDuration: '0.3s'
+                      }}
+                    />
+                  );
+                } else if (commit.mergeFrom !== undefined) {
+                  // Merging back - line from branch to main
+                  lines.push(
+                    <line
+                      key={`merge-${commit.id}`}
+                      className="git-branch"
+                      x1={prevCommit.x}
+                      y1={commit.mergeFrom}
+                      x2={commit.x}
+                      y2={commit.y}
+                      stroke={commit.color}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      style={{ 
+                        animationDelay: '0s',
+                        animationDuration: '0.3s'
+                      }}
+                    />
+                  );
+                }
+                
+                return lines;
+              })}
+              
+              {/* Draw commit nodes */}
+              {commits.map((commit) => (
+                <circle
+                  key={`node-${commit.id}`}
+                  className="git-node"
+                  cx={commit.x}
+                  cy={commit.y}
+                  r="7"
+                  fill={commit.color}
+                  stroke={commit.color}
+                  strokeWidth="2"
+                  style={{ 
+                    animationDelay: '0s',
+                    animationDuration: '0.3s'
+                  }}
+                />
               ))}
             </svg>
           </div>
