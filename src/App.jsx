@@ -14,7 +14,7 @@ function App() {
   const [cachedResult, setCachedResult] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
-  const [gitNodeCount] = useState(() => Math.floor(Math.random() * 3) + 5); // 5-7 nodes
+  const [gitNodeCount] = useState(() => Math.floor(Math.random() * 5) + 8); // 8-12 nodes
 
   // Apply dark mode to body element
   useEffect(() => {
@@ -154,7 +154,7 @@ function App() {
       </button>
 
       <div className="header">
-        <h1>Git Repository Analyzer</h1>
+        <h1>Recap</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="search-form">
@@ -224,41 +224,41 @@ function App() {
       {loading && (
         <div className="loading">
           <div className="git-branching-animation">
-            <svg width="140" height="140" viewBox="0 0 140 140">
-              {/* Main branch (blue) */}
-              <line className="git-branch main-branch" x1="70" y1="10" x2="70" y2="130" strokeLinecap="round" />
+            <svg width="200" height="120" viewBox="0 0 200 120">
+              {/* Main branch (blue) - horizontal */}
+              <line className="git-branch main-branch" x1="10" y1="60" x2="190" y2="60" strokeLinecap="round" />
               
-              {/* Feature branch (green) - branches off and merges back */}
-              <line className="git-branch feature-branch-out" x1="70" y1="35" x2="100" y2="55" strokeLinecap="round" />
-              <line className="git-branch feature-branch-line" x1="100" y1="55" x2="100" y2="85" strokeLinecap="round" />
-              <line className="git-branch feature-branch-in" x1="100" y1="85" x2="70" y2="105" strokeLinecap="round" />
+              {/* Feature branch (green) - branches up and merges back */}
+              <line className="git-branch feature-branch-out" x1="50" y1="60" x2="70" y2="35" strokeLinecap="round" />
+              <line className="git-branch feature-branch-line" x1="70" y1="35" x2="120" y2="35" strokeLinecap="round" />
+              <line className="git-branch feature-branch-in" x1="120" y1="35" x2="140" y2="60" strokeLinecap="round" />
               
-              {/* Hotfix branch (red) - quick branch and merge */}
-              <line className="git-branch hotfix-branch-out" x1="70" y1="65" x2="40" y2="75" strokeLinecap="round" />
-              <line className="git-branch hotfix-branch-in" x1="40" y1="75" x2="70" y2="85" strokeLinecap="round" />
+              {/* Hotfix branch (orange) - quick branch down and merge */}
+              <line className="git-branch hotfix-branch-out" x1="90" y1="60" x2="100" y2="85" strokeLinecap="round" />
+              <line className="git-branch hotfix-branch-in" x1="100" y1="85" x2="110" y2="60" strokeLinecap="round" />
               
-              {/* Main branch nodes */}
+              {/* Main branch nodes - distributed horizontally */}
               {[...Array(gitNodeCount)].map((_, i) => {
-                const spacing = 120 / (gitNodeCount - 1);
-                const y = 10 + (i * spacing);
+                const spacing = 180 / (gitNodeCount - 1);
+                const x = 10 + (i * spacing);
                 return (
                   <circle 
                     key={`main-${i}`}
                     className={`git-node main-node node-${i}`}
-                    cx="70" 
-                    cy={y} 
+                    cx={x} 
+                    cy="60" 
                     r="5" 
                   />
                 );
               })}
               
               {/* Feature branch nodes (green) */}
-              <circle className="git-node feature-node node-feature-1" cx="100" cy="55" r="5" />
-              <circle className="git-node feature-node node-feature-2" cx="100" cy="70" r="5" />
-              <circle className="git-node feature-node node-feature-3" cx="100" cy="85" r="5" />
+              <circle className="git-node feature-node node-feature-1" cx="70" cy="35" r="5" />
+              <circle className="git-node feature-node node-feature-2" cx="95" cy="35" r="5" />
+              <circle className="git-node feature-node node-feature-3" cx="120" cy="35" r="5" />
               
-              {/* Hotfix branch node (red) */}
-              <circle className="git-node hotfix-node node-hotfix" cx="40" cy="75" r="5" />
+              {/* Hotfix branch node (orange) */}
+              <circle className="git-node hotfix-node node-hotfix" cx="100" cy="85" r="5" />
             </svg>
           </div>
           <p>Fetching repository data...</p>
