@@ -209,19 +209,70 @@
   color: #FCA5A5;
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 20px;
-  border: 2px solid #E7E5E4;
-  border-top: 2px solid #1C1917;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.git-branching-animation {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 24px;
 }
 
-.dark-mode .spinner {
-  border-color: #44403C;
-  border-top-color: #E7E5E4;
+.git-branching-animation svg {
+  display: block;
+}
+
+.git-node {
+  fill: #1C1917;
+  opacity: 0;
+  animation: nodeAppear 2.5s ease-in-out infinite;
+}
+
+.dark-mode .git-node {
+  fill: #E7E5E4;
+}
+
+.git-node-1 { animation-delay: 0s; }
+.git-node-2 { animation-delay: 0.3s; }
+.git-node-3 { animation-delay: 0.6s; }
+.git-node-4 { animation-delay: 0.6s; }
+.git-node-5 { animation-delay: 0.9s; }
+
+.git-branch {
+  stroke: #78716C;
+  stroke-width: 2;
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: branchGrow 2.5s ease-in-out infinite;
+}
+
+.dark-mode .git-branch {
+  stroke: #A8A29E;
+}
+
+.git-branch-1 { animation-delay: 0.15s; }
+.git-branch-2 { animation-delay: 0.45s; }
+.git-branch-3 { animation-delay: 0.45s; }
+.git-branch-4 { animation-delay: 0.75s; }
+.git-branch-5 { animation-delay: 0.75s; }
+
+@keyframes nodeAppear {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  20%, 80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes branchGrow {
+  0%, 100% {
+    stroke-dashoffset: 30;
+    opacity: 0;
+  }
+  20%, 80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
 }
 
 @keyframes spin {

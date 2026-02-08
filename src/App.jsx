@@ -222,7 +222,21 @@ function App() {
 
       {loading && (
         <div className="loading">
-          <div className="spinner"></div>
+          <div className="git-branching-animation">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle className="git-node git-node-1" cx="60" cy="20" r="6" />
+              <circle className="git-node git-node-2" cx="60" cy="50" r="6" />
+              <circle className="git-node git-node-3" cx="40" cy="80" r="6" />
+              <circle className="git-node git-node-4" cx="80" cy="80" r="6" />
+              <circle className="git-node git-node-5" cx="60" cy="100" r="6" />
+              
+              <line className="git-branch git-branch-1" x1="60" y1="26" x2="60" y2="44" />
+              <line className="git-branch git-branch-2" x1="60" y1="56" x2="40" y2="74" />
+              <line className="git-branch git-branch-3" x1="60" y1="56" x2="80" y2="74" />
+              <line className="git-branch git-branch-4" x1="40" y1="86" x2="60" y2="94" />
+              <line className="git-branch git-branch-5" x1="80" y1="86" x2="60" y2="94" />
+            </svg>
+          </div>
           <p>Fetching repository data...</p>
           <p className="loading-subtext">This may take a moment for large repositories</p>
         </div>
