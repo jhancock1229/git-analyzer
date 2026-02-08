@@ -311,18 +311,17 @@ function App() {
             >
               {/* Draw lines between connected commits */}
               {commits.map((commit, idx) => {
-                const prevCommit = commits[idx - 1];
-                if (!prevCommit) return null;
+                if (idx === 0) return null;
                 
+                const prevCommit = commits[idx - 1];
                 const lines = [];
                 
-                // Line from previous commit to this one
-                if (commit.branch === prevCommit.branch) {
-                  // Same branch - straight line
+                // Same branch - continue line
+                if (commit.branch === prevCommit.branch && !commit.branchFrom && !commit.mergeFrom) {
                   lines.push(
                     <line
                       key={`line-${commit.id}`}
-                      className="git-branch"
+                      className="git-branch animated-branch"
                       x1={prevCommit.x}
                       y1={prevCommit.y}
                       x2={commit.x}
@@ -332,12 +331,14 @@ function App() {
                       strokeLinecap="round"
                     />
                   );
-                } else if (commit.branchFrom !== undefined) {
-                  // Branching off - line from main to branch
+                }
+                
+                // Branching off
+                if (commit.branchFrom !== undefined) {
                   lines.push(
                     <line
                       key={`branch-${commit.id}`}
-                      className="git-branch"
+                      className="git-branch animated-branch branch-split"
                       x1={prevCommit.x}
                       y1={commit.branchFrom}
                       x2={commit.x}
@@ -347,17 +348,34 @@ function App() {
                       strokeLinecap="round"
                     />
                   );
-                } else if (commit.mergeFrom !== undefined) {
-                  // Merging back - line from branch to main
+                  // Also continue main branch
+                  lines.push(
+                    <line
+                      key={`main-continue-${commit.id}`}
+                      className="git-branch animated-branch"
+                      x1={prevCommit.x}
+                      y1={prevCommit.y}
+                      x2={commit.x}
+                      y2={prevCommit.y}
+                      stroke="#3B82F6"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      opacity="0.5"
+                    />
+                  );
+                }
+                
+                // Merging back
+                if (commit.mergeFrom !== undefined) {
                   lines.push(
                     <line
                       key={`merge-${commit.id}`}
-                      className="git-branch"
+                      className="git-branch animated-branch branch-merge"
                       x1={prevCommit.x}
                       y1={commit.mergeFrom}
                       x2={commit.x}
                       y2={commit.y}
-                      stroke={commit.color}
+                      stroke={prevCommit.color}
                       strokeWidth="3"
                       strokeLinecap="round"
                     />
@@ -367,18 +385,32 @@ function App() {
                 return lines;
               })}
               
-              {/* Draw commit nodes */}
-              {commits.map((commit) => (
-                <circle
-                  key={`node-${commit.id}`}
-                  className="git-node"
-                  cx={commit.x}
-                  cy={commit.y}
-                  r="7"
-                  fill={commit.color}
-                  stroke={commit.color}
-                  strokeWidth="2"
-                />
+              {/* Draw commit nodes with whimsy */}
+              {commits.map((commit, idx) => (
+                <g key={`node-group-${commit.id}`}>
+                  {/* Glow effect */}
+                  <circle
+                    className="git-node-glow"
+                    cx={commit.x}
+                    cy={commit.y}
+                    r="12"
+                    fill={commit.color}
+                    opacity="0"
+                  />
+                  {/* Main node */}
+                  <circle
+                    className="git-node animated-node"
+                    cx={commit.x}
+                    cy={commit.y}
+                    r="7"
+                    fill={commit.color}
+                    stroke={commit.color}
+                    strokeWidth="2"
+                    style={{
+                      animationDelay: `${idx * 0.05}s`
+                    }}
+                  />
+                </g>
               ))}
             </svg>
           </div>

@@ -219,7 +219,7 @@
   display: block;
 }
 
-/* Progressive build animation - elements appear one by one */
+/* Progressive build animation - whimsical and playful */
 .git-branching-animation {
   width: 400px;
   height: 240px;
@@ -232,44 +232,40 @@
   display: block;
 }
 
-/* Branches draw in progressively */
+/* Branches draw in with a playful wiggle */
 .git-branch {
   stroke-width: 3;
   stroke-linecap: round;
   fill: none;
+}
+
+.animated-branch {
   stroke-dasharray: 1000;
   stroke-dashoffset: 1000;
-  animation: drawBranch 0.8s ease-out forwards;
+  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
 }
 
-.main-branch {
-  stroke: #3B82F6;
+.branch-split {
+  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards,
+             branchGlow 0.6s ease-out forwards;
 }
 
-.dynamic-branch {
-  stroke-width: 3;
+.branch-merge {
+  animation: drawBranchWiggle 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards,
+             branchGlow 0.6s ease-out forwards;
 }
 
-/* Nodes appear progressively */
+/* Nodes appear with bounce and glow */
 .git-node {
-  opacity: 0;
-  transform: scale(0);
-  animation: appearNode 0.4s ease-out forwards;
+  transform-origin: center;
 }
 
-.main-node {
-  fill: #3B82F6;
-  stroke: #2563EB;
-  stroke-width: 2;
+.animated-node {
+  animation: nodeBounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
 }
 
-.dynamic-node {
-  stroke-width: 2;
-}
-
-/* Apply staggered delays via inline styles */
-.branch-group {
-  /* Delays applied inline per branch */
+.git-node-glow {
+  animation: nodeGlowPulse 0.8s ease-out forwards;
 }
 
 /* Dark mode */
@@ -279,25 +275,59 @@
   fill: #60A5FA;
 }
 
-/* Draw branch animation */
-@keyframes drawBranch {
-  to {
+/* Whimsical animations */
+@keyframes drawBranchWiggle {
+  0% {
+    stroke-dashoffset: 1000;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
     stroke-dashoffset: 0;
+    opacity: 1;
   }
 }
 
-/* Node appear animation */
-@keyframes appearNode {
+@keyframes nodeBounceIn {
   0% {
     opacity: 0;
-    transform: scale(0);
+    transform: scale(0) rotate(0deg);
   }
   50% {
-    transform: scale(1.15);
+    transform: scale(1.3) rotate(180deg);
+  }
+  70% {
+    transform: scale(0.9) rotate(340deg);
   }
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+@keyframes nodeGlowPulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+@keyframes branchGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 0px currentColor);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px currentColor);
   }
 }
 
