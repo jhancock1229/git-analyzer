@@ -14,6 +14,7 @@ function App() {
   const [cachedResult, setCachedResult] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
+  const [categoryModal, setCategoryModal] = useState(null);
 
   // Apply dark mode to body element
   useEffect(() => {
@@ -327,11 +328,67 @@ function App() {
 
           {data.stats.topAreas && data.stats.topAreas.length > 0 && (
             <div className="areas-card">
-              <h3>🎯 Active Areas</h3>
+              <h3>Active Areas</h3>
               <div className="areas-list">
                 {data.stats.topAreas.map((area, index) => (
-                  <span key={index} className="area-tag">{area}</span>
+                  <button 
+                    key={index} 
+                    className="area-tag clickable-tag"
+                    onClick={() => setCategoryModal({
+                      category: area,
+                      commits: data.recentCommits.filter(c => {
+                        const msg = c.message.toLowerCase();
+                        const areaLower = area.toLowerCase();
+                        return msg.includes(areaLower) || 
+                               (areaLower.includes('feature') && (msg.includes('feat') || msg.includes('add'))) ||
+                               (areaLower.includes('fix') && msg.includes('fix')) ||
+                               (areaLower.includes('docs') && msg.includes('doc')) ||
+                               (areaLower.includes('test') && msg.includes('test')) ||
+                               (areaLower.includes('refactor') && msg.includes('refactor')) ||
+                               (areaLower.includes('performance') && (msg.includes('perf') || msg.includes('optim'))) ||
+                               (areaLower.includes('security') && msg.includes('secur'));
+                      })
+                    })}
+                  >
+                    {area}
+                  </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Category Modal */}
+          {categoryModal && (
+            <div className="modal-overlay" onClick={() => setCategoryModal(null)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3>{categoryModal.category}</h3>
+                  <button className="modal-close" onClick={() => setCategoryModal(null)}>×</button>
+                </div>
+                <div className="modal-body">
+                  {categoryModal.commits.length > 0 ? (
+                    <div className="commits-list scrollable">
+                      {categoryModal.commits.map((commit, index) => (
+                        <a 
+                          key={index} 
+                          href={commit.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="commit-item clickable"
+                        >
+                          <div className="commit-sha">{commit.sha}</div>
+                          <p className="commit-message">{commit.message}</p>
+                          <div className="commit-meta">
+                            <span>{commit.author}</span>
+                            <span>{new Date(commit.date).toLocaleDateString()}</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="no-commits">No commits found in this category</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -341,16 +398,22 @@ function App() {
               <h3>Recent Commits</h3>
               <div className="commits-list scrollable">
                 {data.recentCommits.slice(0, 5).map((commit, index) => (
-                  <div key={index} className="commit-item">
-                    <a href={commit.url} target="_blank" rel="noopener noreferrer" className="commit-sha">
+                  <a 
+                    key={index} 
+                    href={commit.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="commit-item clickable"
+                  >
+                    <div className="commit-sha">
                       {commit.sha}
-                    </a>
+                    </div>
                     <p className="commit-message">{commit.message}</p>
                     <div className="commit-meta">
                       <span>{commit.author}</span>
                       <span>{new Date(commit.date).toLocaleDateString()}</span>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             </div>
@@ -360,16 +423,22 @@ function App() {
                 <h3>Recent Merged PRs</h3>
                 <div className="prs-list scrollable">
                   {data.recentPRs.slice(0, 5).map((pr, index) => (
-                    <div key={index} className="pr-item">
-                      <a href={pr.url} target="_blank" rel="noopener noreferrer" className="pr-number">
+                    <a 
+                      key={index} 
+                      href={pr.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="pr-item clickable"
+                    >
+                      <div className="pr-number">
                         #{pr.number}
-                      </a>
+                      </div>
                       <p className="pr-title">{pr.title}</p>
                       <div className="pr-meta">
                         <span>{pr.author}</span>
                         <span>{new Date(pr.mergedAt).toLocaleDateString()}</span>
                       </div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               </div>

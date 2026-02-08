@@ -505,11 +505,28 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 500;
+  border: none;
+  cursor: default;
+}
+
+.area-tag.clickable-tag {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.area-tag.clickable-tag:hover {
+  background: #292524;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .dark-mode .area-tag {
   background: #E7E5E4;
   color: #1C1917;
+}
+
+.dark-mode .area-tag.clickable-tag:hover {
+  background: #FFFEFB;
 }
 
 .commits-list,
@@ -569,12 +586,22 @@
   background: #F5F5F4;
   border-left: 2px solid #1C1917;
   font-family: 'Inter', sans-serif;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.commit-item.clickable,
+.pr-item.clickable {
+  cursor: pointer;
 }
 
 .commit-item:hover,
 .pr-item:hover {
   background: #E7E5E4;
+  border-left-width: 4px;
+  transform: translateX(2px);
 }
 
 .dark-mode .commit-item,
@@ -662,4 +689,110 @@
   .detail-card {
     padding: 24px;
   }
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: #FFFEFB;
+  border: 1px solid #E7E5E4;
+  max-width: 700px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.dark-mode .modal-content {
+  background: #292524;
+  border-color: #44403C;
+}
+
+.modal-header {
+  padding: 30px;
+  border-bottom: 1px solid #E7E5E4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dark-mode .modal-header {
+  border-bottom-color: #44403C;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-family: 'Playfair Display', serif;
+  font-weight: 600;
+  color: #1C1917;
+}
+
+.dark-mode .modal-header h3 {
+  color: #E7E5E4;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #78716C;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.modal-close:hover {
+  color: #1C1917;
+}
+
+.dark-mode .modal-close:hover {
+  color: #E7E5E4;
+}
+
+.modal-body {
+  padding: 30px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-body .commits-list {
+  gap: 16px;
+}
+
+.modal-body .commit-item {
+  margin: 0;
+}
+
+.no-commits {
+  text-align: center;
+  color: #78716C;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  padding: 40px 0;
+}
+
+.dark-mode .no-commits {
+  color: #A8A29E;
 }
